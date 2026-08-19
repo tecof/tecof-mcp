@@ -1,0 +1,348 @@
+/**
+ * Tecof Developer API v1 istemcisi (sözleşme §2).
+ *
+ * Tek sorumluluk: Bearer header'ı basmak, yanıt zarfını çözmek ve HTTP/zarf
+ * hatalarını ajanın DÜZELTEBİLECEĞİ mesajlara çevirmek. 401/403/409/429 ayrımı
+ * önemli: 401 "token yanlış" (kullanıcı .env'i düzeltsin), 403 "scope/plan"
+ * (panelden yeni anahtar), 409 "sayfa değişti" (ajan yeniden okusun), 429
+ * "yavaşla" (ajan beklesin). Hepsini tek "request failed" altında toplarsak
+ * ajan körlemesine tekrar dener.
+ */
+
+import type {
+    ApiEnvelope,
+    DocIssue,
+    LangValue,
+    MeResponse,
+    PageDetail,
+    PageSummary,
+    PageWriteResult,
+    PreviewUrlResponse,
+    TecofDocument,
+} from "./types.js";
+
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+export class ApiError extends Error {
+    readonly status: number;
+    readonly messageCode: string | null;
+    readonly data: unknown;
+    /** Ajanın yapması gereken bir sonraki adım — mesajın sonuna eklenir */
+    readonly hint: string | null;
+
+    constructor(args: { status: number; message: string; messageCode?: string | null; data?: unknown; hint?: string | null }) {
+        super(args.message);
+        this.name = "ApiError";
+        this.status = args.status;
+        this.messageCode = args.messageCode ?? null;
+        this.data = args.data;
+        this.hint = args.hint ?? null;
+    }
+
+    /** Tool sonucuna basılacak tam metin (mesaj + ipucu + kod). */
+    toDisplayString(): string {
+        const parts = [this.message];
+        if (this.hint) parts.push(this.hint);
+        const tail: string[] = [];
+        if (this.status) tail.push(`HTTP ${this.status}`);
+        if (this.messageCode) tail.push(`code=${this.messageCode}`);
+        if (tail.length) parts.push(`[${tail.join(", ")}]`);
+        return parts.join(" ");
+    }
+}
+
+export type TecofApiClientOptions = {
+    baseUrl: string;
+    token: string;
+    fetch?: FetchLike;
+    /** ms; varsayılan 30 sn — backend'in doküman doğrulaması büyük sayfalarda uzayabilir */
+    timeoutMs?: number;
+    userAgent?: string;
+};
+
+function normalizeBaseUrl(raw: string): string {
+    // Kullanıcı .env'e "https://api.tecof.com/" ya da ".../api/v1" yazmış olabilir;
+    // ikisini de kabul edip tek biçime indiriyoruz.
+    let base = raw.trim().replace(/\/+$/, "");
+    base = base.replace(/\/api\/v1$/, "");
+    return base;
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
+
+/**
+ * PAT şifresiz (http://) bir adrese gönderilmemeli: anahtar 1 yıla kadar geçerli
+ * ve pages:write yetkili. Yerel geliştirme (loopback) istisna. Dönen metin
+ * başlangıçta stderr'e, her tool hatasına ipucu olarak eklenir; istek yine de
+ * atılır (kullanıcı bilinçli http kullanıyor olabilir) ama 3xx yönlendirme
+ * takip edilmez — Node fetch cross-origin yönlendirmede Authorization'ı düşürür,
+ * kullanıcı yanıltıcı 401 görürdü.
+ */
+export function describeInsecureApiUrl(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    try {
+        const u = new URL(raw);
+        if (u.protocol === "https:") return null;
+        if (u.protocol === "http:" && LOOPBACK_HOSTS.has(u.hostname)) return null;
+        return `TECOF_API_URL şifresiz (${u.protocol}//${u.host}) — API anahtarı düz metin gider. https:// kullanın; http→https yönlendirmesi takip EDİLMEZ (Authorization yönlendirmede düşer).`;
+    } catch {
+        return `TECOF_API_URL geçerli bir URL değil: ${raw}`;
+    }
+}
+
+/** messageCode → insan okunur açıklama + ipucu. Bilinmeyen kodlarda generic metin. */
+function explain(status: number, messageCode: string | null, serverMessage: string | undefined, data: unknown): { message: string; hint: string | null } {
+    const code = messageCode ?? "";
+    switch (status) {
+        case 401: {
+            const map: Record<string, string> = {
+                "missing-auth-token": "İstekte Bearer token yok.",
+                "token-invalid": "API anahtarı geçersiz.",
+                "token-expired": "API anahtarının süresi dolmuş.",
+                "token-revoked": "API anahtarı iptal edilmiş.",
+                "no-team-access": "Anahtarın sahibi kullanıcı artık bu mağazanın ekibinde değil.",
+            };
+            return {
+                message: map[code] ?? serverMessage ?? "Kimlik doğrulama başarısız.",
+                hint: "TECOF_API_TOKEN değerini kontrol edin; gerekirse panelden (Ayarlar → API Anahtarları) yeni bir anahtar oluşturun.",
+            };
+        }
+        case 403: {
+            if (code === "insufficient-scope") {
+                const required = (data as any)?.required;
+                return {
+                    message: `API anahtarının yetkisi yetersiz${Array.isArray(required) ? ` (gereken scope: ${required.join(", ")})` : ""}.`,
+                    hint: "Panelden gereken scope'ları içeren yeni bir anahtar oluşturun.",
+                };
+            }
+            if (code === "plan-feature-unavailable") {
+                return {
+                    message: "Mağazanın planı API erişimini (apiAccess) kapsamıyor.",
+                    hint: "Panelden planı yükseltin ya da mağaza sahibine iletin.",
+                };
+            }
+            return { message: serverMessage ?? "Bu işlem için yetki yok.", hint: null };
+        }
+        case 404:
+            return { message: serverMessage ?? "Kayıt bulunamadı.", hint: "Sayfa id/slug'ını list_pages ile doğrulayın." };
+        case 409:
+            return {
+                message: "Sayfa siz okuduktan sonra başka biri tarafından değiştirildi (iyimser kilit).",
+                hint: "get_page ile güncel hâlini alıp değişikliğinizi yeniden uygulayın.",
+            };
+        case 429:
+            return {
+                message: "İstek sınırı aşıldı (okuma 120/dk, yazma 30/dk).",
+                hint: "Kısa bir süre bekleyip tekrar deneyin; toplu değişiklikleri tek update_page çağrısında birleştirin.",
+            };
+        case 400: {
+            if (code === "invalid-document") {
+                const errors = (data as any)?.errors;
+                const detail = Array.isArray(errors)
+                    ? errors.slice(0, 10).map((e: any) => `${e.path ?? "?"}: ${e.message ?? e.code}`).join("; ")
+                    : "";
+                return { message: `Sunucu dokümanı reddetti${detail ? `: ${detail}` : "."}`, hint: null };
+            }
+            if (code === "already-exists") {
+                return { message: `Bu slug zaten kullanımda (${(data as any)?.slug ?? "?"}).`, hint: "Farklı bir slug verin ya da mevcut sayfayı update_page ile güncelleyin." };
+            }
+            if (code === "theme-not-installed") {
+                return { message: "Verilen themeId bu mağazaya kurulu değil.", hint: "TECOF_THEME_ID / NEXT_PUBLIC_THEME_ID değerini get_site_context çıktısındaki themes listesiyle karşılaştırın." };
+            }
+            if (code === "template-pages-not-supported") {
+                return { message: "Şablon sayfalar (isTemplate) API üzerinden oluşturulamaz/değiştirilemez.", hint: "Şablon sayfaları panelden düzenleyin." };
+            }
+            return { message: serverMessage ?? "Geçersiz istek.", hint: null };
+        }
+        default:
+            return { message: serverMessage ?? `Sunucu hatası (${status}).`, hint: null };
+    }
+}
+
+/**
+ * Sunucu uyarıları zarfın KÖKÜNDE gelir (`{success, data, warnings}`); eski/olası
+ * `data.warnings` biçimi de yedek olarak okunur. String gelirse Issue'ya sarılır.
+ */
+function extractWarnings(envelope: ApiEnvelope<unknown>, data: unknown): DocIssue[] {
+    const raw = (envelope.warnings ?? (data as any)?.warnings ?? []) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((w): DocIssue | null => {
+            if (typeof w === "string") return { code: "server", path: "", message: w };
+            if (w && typeof w === "object") {
+                const o = w as Record<string, unknown>;
+                return { code: String(o.code ?? "server"), path: String(o.path ?? ""), message: String(o.message ?? JSON.stringify(o)) };
+            }
+            return null;
+        })
+        .filter((w): w is DocIssue => !!w);
+}
+
+export class TecofApiClient {
+    private readonly baseUrl: string;
+    private readonly token: string;
+    private readonly fetchImpl: FetchLike;
+    private readonly timeoutMs: number;
+    private readonly userAgent: string;
+
+    constructor(options: TecofApiClientOptions) {
+        this.baseUrl = normalizeBaseUrl(options.baseUrl);
+        this.token = options.token;
+        this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
+        this.timeoutMs = options.timeoutMs ?? 30_000;
+        this.userAgent = options.userAgent ?? "@tecof/mcp";
+    }
+
+    get apiBase(): string {
+        return `${this.baseUrl}/api/v1`;
+    }
+
+    private async request<T>(method: string, pathname: string, opts: { query?: Record<string, string | boolean | undefined>; body?: unknown } = {}): Promise<{ data: T; envelope: ApiEnvelope<T> }> {
+        const url = new URL(`${this.apiBase}${pathname}`);
+        for (const [k, v] of Object.entries(opts.query ?? {})) {
+            if (v === undefined || v === null || v === "") continue;
+            url.searchParams.set(k, String(v));
+        }
+
+        /* Zaman aşımı HEM header HEM gövde okumasını kapsar: clearTimeout ancak
+           res.text() bittikten sonra (finally) çağrılır; yoksa header'ı gönderip
+           gövdeyi askıda bırakan bir proxy tool çağrısını süresiz kilitlerdi. */
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        const timeoutError = () =>
+            new ApiError({
+                status: 0,
+                message: `Backend ${this.timeoutMs / 1000} sn içinde yanıt vermedi (${url.origin}).`,
+                hint: "TECOF_API_URL doğru mu ve sunucu ayakta mı kontrol edin.",
+            });
+
+        let res: Response;
+        let text = "";
+        try {
+            try {
+                res = await this.fetchImpl(url.toString(), {
+                    method,
+                    headers: {
+                        Authorization: `Bearer ${this.token}`,
+                        Accept: "application/json",
+                        "User-Agent": this.userAgent,
+                        ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+                    },
+                    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+                    signal: controller.signal,
+                    // 3xx takip edilmez: yönlendirmede Authorization düşer → yanıltıcı 401. Aşağıda açık hataya çevrilir.
+                    redirect: "manual",
+                });
+            } catch (err: any) {
+                if (err?.name === "AbortError") throw timeoutError();
+                throw new ApiError({
+                    status: 0,
+                    message: `Backend'e ulaşılamadı (${url.origin}): ${err?.message ?? err}`,
+                    hint: "TECOF_API_URL doğru mu ve sunucu ayakta mı kontrol edin.",
+                });
+            }
+
+            if (res.status >= 300 && res.status < 400) {
+                const location = res.headers.get("location");
+                throw new ApiError({
+                    status: res.status,
+                    message: `Backend yönlendirme döndü (${res.status}${location ? ` → ${location}` : ""}); TECOF_API_URL şeması/host'u yanlış görünüyor.`,
+                    hint: "TECOF_API_URL'yi yönlendirilen adresle (örn. https://…) değiştirin; yönlendirme takip edilmez çünkü Authorization başlığı düşer.",
+                });
+            }
+
+            try {
+                /* Gövde okuması da zaman aşımına tabi. Race: fetch uygulaması sinyali
+                   gövdeye taşımasa bile (özel fetch/mock) abort anında döneriz. */
+                const abortedPromise = new Promise<never>((_, reject) => {
+                    if (controller.signal.aborted) reject(timeoutError());
+                    controller.signal.addEventListener("abort", () => reject(timeoutError()), { once: true });
+                });
+                text = await Promise.race([res.text(), abortedPromise]);
+            } catch (err: any) {
+                if (err instanceof ApiError) throw err;
+                if (err?.name === "AbortError" || controller.signal.aborted) throw timeoutError();
+                throw new ApiError({ status: res.status, message: `Yanıt gövdesi okunamadı (${url.origin}): ${err?.message ?? err}` });
+            }
+        } finally {
+            clearTimeout(timer);
+        }
+
+        let envelope: ApiEnvelope<T> | null = null;
+        if (text) {
+            try {
+                envelope = JSON.parse(text) as ApiEnvelope<T>;
+            } catch {
+                envelope = null;
+            }
+        }
+
+        if (!res.ok || !envelope || envelope.success === false) {
+            const status = res.status;
+            const code = envelope?.messageCode ?? null;
+            const { message, hint } = explain(status, code, envelope?.message, envelope?.data);
+            throw new ApiError({ status, message, messageCode: code, data: envelope?.data, hint });
+        }
+
+        return { data: envelope.data as T, envelope };
+    }
+
+    // ── Uçlar ────────────────────────────────────────────────────────────────
+
+    async me(): Promise<MeResponse> {
+        return (await this.request<MeResponse>("GET", "/me")).data;
+    }
+
+    async listPages(params: { themeId?: string | null; includeTemplates?: boolean } = {}): Promise<{ items: PageSummary[]; total: number; themeId: string | null }> {
+        const { data, envelope } = await this.request<PageSummary[]>("GET", "/pages", {
+            query: { themeId: params.themeId ?? undefined, includeTemplates: params.includeTemplates ? "true" : undefined },
+        });
+        const items = Array.isArray(data) ? data : [];
+        const metaThemeId = (envelope.meta as any)?.themeId ?? params.themeId ?? null;
+        return { items, total: envelope.totalData ?? items.length, themeId: metaThemeId };
+    }
+
+    async getPage(idOrSlug: string, params: { themeId?: string | null; includePublished?: boolean } = {}): Promise<PageDetail> {
+        return (
+            await this.request<PageDetail>("GET", `/pages/${encodeURIComponent(idOrSlug)}`, {
+                query: { themeId: params.themeId ?? undefined, include: params.includePublished ? "published" : undefined },
+            })
+        ).data;
+    }
+
+    async createPage(body: {
+        themeId: string;
+        slug: string;
+        title: string;
+        metaTitle?: LangValue[];
+        metaDescription?: LangValue[];
+        draftData?: TecofDocument;
+    }): Promise<PageWriteResult> {
+        const { data, envelope } = await this.request<PageDetail>("POST", "/pages", { body });
+        return { page: data, warnings: extractWarnings(envelope, data) };
+    }
+
+    async updatePage(id: string, body: {
+        draftData?: TecofDocument;
+        title?: string;
+        slug?: string;
+        metaTitle?: LangValue[];
+        metaDescription?: LangValue[];
+        expectedModifiedDate?: string | null;
+    }): Promise<PageWriteResult> {
+        const { data, envelope } = await this.request<PageDetail>("PUT", `/pages/${encodeURIComponent(id)}`, { body });
+        return { page: data, warnings: extractWarnings(envelope, data) };
+    }
+
+    async deletePage(id: string): Promise<{ _id: string; slug: string; status: string }> {
+        return (await this.request<{ _id: string; slug: string; status: string }>("DELETE", `/pages/${encodeURIComponent(id)}`)).data;
+    }
+
+    async previewUrl(id: string, params: { locale?: string } = {}): Promise<PreviewUrlResponse> {
+        return (
+            await this.request<PreviewUrlResponse>("POST", `/pages/${encodeURIComponent(id)}/preview-url`, {
+                body: params.locale ? { locale: params.locale } : {},
+            })
+        ).data;
+    }
+}
