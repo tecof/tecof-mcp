@@ -12,6 +12,9 @@ import { registerDeletePage } from "./tools/delete_page.js";
 import { registerGetPage } from "./tools/get_page.js";
 import { registerGetPreviewUrl } from "./tools/get_preview_url.js";
 import { registerGetSiteContext } from "./tools/get_site_context.js";
+import { registerListMedia } from "./tools/list_media.js";
+import { registerImportImage } from "./tools/import_image.js";
+import { registerGenerateImage } from "./tools/generate_image.js";
 import { registerListComponents } from "./tools/list_components.js";
 import { registerListPages } from "./tools/list_pages.js";
 import { registerUpdatePage } from "./tools/update_page.js";
@@ -34,7 +37,8 @@ export const SERVER_INSTRUCTIONS =
     "Bölümleri yazarlık biçimiyle ver: {type, props, variant?, slots:{slot:[...]}} — draftData JSON'u elle yazma; id üretme (MCP üretir). " +
     "Alan adlarını ve select seçeneklerini list_components çıktısından al; slot'a yalnız allow listesindeki element tiplerini koy. " +
     "update_page için id'leri get_page (outline) çıktısından al; 409 alırsan sayfayı yeniden oku. " +
-    "delete_page yalnız kullanıcı açıkça onayladıysa (confirm:true).";
+    "delete_page yalnız kullanıcı açıkça onayladıysa (confirm:true). " +
+    "Görsel için: list_media (mevcut kütüphane), import_image (bir URL'den al) ya da generate_image (AI, mağaza kredisinden düşer) — dönen uploadValue'yu bölümün görsel alanına koy.";
 
 export type BuildServerOptions = {
     ctx: ServerContext;
@@ -55,6 +59,9 @@ export function buildServer({ ctx }: BuildServerOptions): McpServer {
     registerUpdatePage(server, ctx);
     registerDeletePage(server, ctx);
     registerGetPreviewUrl(server, ctx);
+    registerListMedia(server, ctx);
+    registerImportImage(server, ctx);
+    registerGenerateImage(server, ctx);
 
     return server;
 }

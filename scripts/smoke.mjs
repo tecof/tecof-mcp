@@ -26,6 +26,9 @@ const EXPECTED_TOOLS = [
     "update_page",
     "delete_page",
     "get_preview_url",
+    "list_media",
+    "import_image",
+    "generate_image",
 ];
 
 const child = spawn(process.execPath, [bin], {

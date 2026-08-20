@@ -53,7 +53,7 @@ async function setup(options: { backend?: FakeBackendOptions; config?: Partial<T
 }
 
 describe("MCP sunucusu — tools/list ve instructions", () => {
-    it("9 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
+    it("12 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
         const { client } = await setup();
         expect(client.init.serverInfo.name).toBe("tecof");
         expect(client.init.instructions).toBe(SERVER_INSTRUCTIONS);
@@ -62,10 +62,15 @@ describe("MCP sunucusu — tools/list ve instructions", () => {
         const tools = await client.listTools();
         const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
         expect(Object.keys(byName).sort()).toEqual(
-            ["create_page", "delete_page", "get_page", "get_preview_url", "get_site_context", "list_components", "list_pages", "update_page", "validate_document"]
+            ["create_page", "delete_page", "generate_image", "get_page", "get_preview_url", "get_site_context", "import_image", "list_components", "list_media", "list_pages", "update_page", "validate_document"]
         );
-        for (const n of ["get_site_context", "list_components", "list_pages", "get_page", "validate_document", "get_preview_url"]) {
+        for (const n of ["get_site_context", "list_components", "list_pages", "get_page", "validate_document", "get_preview_url", "list_media"]) {
             expect(byName[n].annotations.readOnlyHint, n).toBe(true);
+        }
+        // Görsel yazma araçları: yıkıcı değil ama salt-okunur da değil
+        for (const n of ["import_image", "generate_image"]) {
+            expect(byName[n].annotations.readOnlyHint, n).toBe(false);
+            expect(byName[n].annotations.destructiveHint, n).toBe(false);
         }
         expect(byName.delete_page.annotations.destructiveHint).toBe(true);
         expect(byName.delete_page._meta["anthropic/requiresUserInteraction"]).toBe(true);

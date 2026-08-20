@@ -19,6 +19,7 @@ import type {
     PageWriteResult,
     PreviewUrlResponse,
     TecofDocument,
+    UploadObject,
 } from "./types.js";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -343,6 +344,32 @@ export class TecofApiClient {
             await this.request<PreviewUrlResponse>("POST", `/pages/${encodeURIComponent(id)}/preview-url`, {
                 body: params.locale ? { locale: params.locale } : {},
             })
+        ).data;
+    }
+
+    // ─── Medya + AI görsel ───────────────────────────────────────────────
+    async listMedia(params: { page?: number; limit?: number; search?: string } = {}): Promise<{ items: UploadObject[]; total: number }> {
+        const res = await this.request<UploadObject[]>("GET", "/media", {
+            query: {
+                page: params.page ? String(params.page) : undefined,
+                limit: params.limit ? String(params.limit) : undefined,
+                search: params.search || undefined,
+            },
+        });
+        return { items: res.data ?? [], total: res.envelope.totalData ?? (res.data?.length ?? 0) };
+    }
+
+    async importImage(url: string, name?: string): Promise<UploadObject> {
+        return (await this.request<UploadObject>("POST", "/media/import-url", { body: { url, ...(name ? { name } : {}) } })).data;
+    }
+
+    async generateImage(prompt: string, orientation?: string): Promise<{ upload: UploadObject; credit: { charged: number; balance: number } | null }> {
+        return (
+            await this.request<{ upload: UploadObject; credit: { charged: number; balance: number } | null }>(
+                "POST",
+                "/ai/generate-image",
+                { body: { prompt, ...(orientation ? { orientation } : {}) } }
+            )
         ).data;
     }
 }

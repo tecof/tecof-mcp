@@ -189,6 +189,19 @@ export type PageWriteResult = {
     warnings: DocIssue[];
 };
 
+/** Editör upload alanına konabilecek dosya objesi (backend /media çıktısı). */
+export type UploadObject = {
+    _id: string;
+    name: string;
+    size: number | null;
+    type: string;
+    mimeType: string | null;
+    folder: string;
+    provider: string | null;
+    meta: Record<string, unknown>;
+    url: string | null;
+};
+
 export type PreviewUrlResponse = {
     previewToken: string;
     expiresAt: string;
