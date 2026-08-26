@@ -111,7 +111,7 @@ reposunun kökünde başlatır, sunucu `.env`'i oradan okur.
 | `list_pages` | `includeTemplates?` | Sayfa listesi (slug artan) |
 | `get_page` | `page` (id\|slug), `mode?: outline\|full` | outline: bölüm/slot ağacı (id, type, kısa metin); full: draftData |
 | `validate_document` | `{ sections }` **veya** `{ document }` | Kaydetmeden doğrular; `ok`, `errors`, `warnings`, `normalizedDocument` |
-| `create_page` | `slug`, `title`, `sections`, `meta?`, `layoutFrom?`, `dryRun?` | Taslak oluşturur; Header/Footer `layoutFrom` sayfasındaki (varsayılan `home`) ortak bileşenlerden kopyalanır |
+| `create_page` | `slug`, `title`, `slugs?`, `titles?`, `sections`, `meta?`, `layoutFrom?`, `dryRun?` | Taslak oluşturur; Header/Footer `layoutFrom` sayfasındaki (varsayılan `home`) ortak bileşenlerden kopyalanır. `slugs`/`titles` dile göre adres/ad verir (`{tr:"hakkimizda", en:"about"}`); verilmezse `slug`/`title` tüm açık dillerde kullanılır |
 | `update_page` | `page`, `operations` **veya** `document`, `meta?`, `dryRun?` | GET → işlemleri uygula → doğrula → PUT (`expectedModifiedDate` ile iyimser kilit; 409'da net mesaj) |
 | `delete_page` | `page`, `confirm: true` | Soft delete — kullanıcı onayı şart |
 | `get_preview_url` | `page`, `locale?` | 1 saatlik taslak önizleme linkleri (storefront + yerel) |

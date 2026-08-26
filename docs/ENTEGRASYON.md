@@ -133,7 +133,7 @@ Bu akışı ekibe dayatmak için tema reposundaki `CLAUDE.md` / `.agents/AGENTS.
 | `list_pages` | okuma | `includeTemplates?` | slug, başlık, durum, değişiklik tarihi |
 | `get_page` | okuma | `page` (id\|slug), `mode?: outline\|full` | outline: bölüm ağacı; full: doküman JSON |
 | `validate_document` | okuma (yerel) | `sections` **veya** `document` | `{ok, errors, warnings}` |
-| `create_page` | yazma | `slug`, `title`, `sections`, `meta?`, `layoutFrom?`, `dryRun?` | pageId, outline, panel + önizleme linkleri |
+| `create_page` | yazma | `slug`, `title`, `slugs?`, `titles?`, `sections`, `meta?`, `layoutFrom?`, `dryRun?` | pageId, outline, panel + önizleme linkleri |
 | `update_page` | yazma | `page` + `operations` **veya** `document`, `meta?`, `dryRun?` | uygulanan işlemler, outline |
 | `delete_page` | **yıkıcı** | `page`, `confirm: true` | soft delete sonucu |
 | `get_preview_url` | okuma | `page`, `locale?` | 1 saatlik önizleme linki (vitrin + localhost) |

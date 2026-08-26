@@ -34,6 +34,11 @@ export function registerGetPage(server: McpServer, ctx: ServerContext) {
                     id: detail._id,
                     slug: detail.slug,
                     title: detail.title,
+                    /* Dil başına adres/ad — boş dizi "her dil kanonik slug'ı
+                       kullanıyor" demektir (sayfa henüz çok dilli adres almamış). */
+                    slugs: detail.slugs ?? [],
+                    titles: detail.titles ?? [],
+                    slugAlternates: detail.slugAlternates ?? {},
                     status: detail.status,
                     isTemplate: !!detail.isTemplate,
                     hasPublished: !!detail.hasPublished,

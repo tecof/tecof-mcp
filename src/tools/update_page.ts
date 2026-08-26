@@ -13,12 +13,12 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { ApiError } from "../api.js";
 import type { ServerContext } from "../context.js";
-import type { IssueSink } from "../document/fields.js";
+import { normalizeLanguageValue, type IssueSink } from "../document/fields.js";
 import { applyOperations } from "../document/operations.js";
 import { buildOutline } from "../document/outline.js";
 import { emptyDocument } from "../document/tree.js";
 import { normalizeDocument, validateDocument } from "../document/validate.js";
-import type { Issue, TecofDocument } from "../types.js";
+import type { Issue, LangValue, TecofDocument } from "../types.js";
 import {
     DocumentSchema,
     errorResult,
@@ -41,7 +41,7 @@ export function registerUpdatePage(server: McpServer, ctx: ServerContext) {
         {
             title: "Sayfayı güncelle (taslak)",
             description:
-                "Sayfa taslağını günceller. Ya `operations` (append/insert/replace/remove/move_section, set_props, set_slot, set_root_props — id'ler get_page outline'dan; append_section ve anchor'sız insert_section yeni bölümü Footer'ın ÖNÜNE koyar) ya da `document` (tam doküman) verin; `meta` ile başlık/slug/meta alanları (yalnız meta verilirse draftData'ya dokunulmaz). Ortak bileşenler (Header/Footer) ve onların ALT düğümleri değiştirilemez. dryRun:true kaydetmez.",
+                "Sayfa taslağını günceller. Dile göre adres/ad için meta.slugs / meta.titles kullanın (kısmi gönderim eski dilleri korur). Ya `operations` (append/insert/replace/remove/move_section, set_props, set_slot, set_root_props — id'ler get_page outline'dan; append_section ve anchor'sız insert_section yeni bölümü Footer'ın ÖNÜNE koyar) ya da `document` (tam doküman) verin; `meta` ile başlık/slug/meta alanları (yalnız meta verilirse draftData'ya dokunulmaz). Ortak bileşenler (Header/Footer) ve onların ALT düğümleri değiştirilemez. dryRun:true kaydetmez.",
             inputSchema: z.object({
                 page: PageRefSchema,
                 operations: z.array(OperationSchema).optional(),
@@ -50,6 +50,10 @@ export function registerUpdatePage(server: McpServer, ctx: ServerContext) {
                     .object({
                         title: z.string().optional(),
                         slug: z.string().optional(),
+                        /* Kısmi gönderilebilir: yalnız {en:"about"} verirseniz
+                           TR adresi olduğu gibi kalır (backend eskisini korur). */
+                        slugs: LangShortcutSchema.optional(),
+                        titles: LangShortcutSchema.optional(),
                         metaTitle: LangShortcutSchema.optional(),
                         metaDescription: LangShortcutSchema.optional(),
                     })
@@ -106,6 +110,15 @@ export function registerUpdatePage(server: McpServer, ctx: ServerContext) {
 
             const metaSink: IssueSink = { errors: [], warnings: [] };
             const metaFields = normalizeMeta(meta, site.lang, metaSink);
+            /* slugs/titles meta alanlarıyla aynı kısayol biçimlerini kabul eder
+               ("metin" | {tr,en} | [{code,value}]); backend kısmi gönderimde
+               verilmeyen dilin eski değerini korur. */
+            const localizedSlugs = meta?.slugs !== undefined
+                ? (normalizeLanguageValue(meta.slugs, site.lang, "meta.slugs", metaSink) as LangValue[])
+                : undefined;
+            const localizedTitles = meta?.titles !== undefined
+                ? (normalizeLanguageValue(meta.titles, site.lang, "meta.titles", metaSink) as LangValue[])
+                : undefined;
             warnings.push(...metaSink.warnings);
             if (metaSink.errors.length) return validationErrorResult("meta alanları geçersiz:", metaSink.errors, warnings);
 
@@ -134,6 +147,8 @@ export function registerUpdatePage(server: McpServer, ctx: ServerContext) {
                     ...(sendDraft && doc ? { draftData: doc } : {}),
                     ...(meta?.title !== undefined ? { title: meta.title } : {}),
                     ...(meta?.slug !== undefined ? { slug: meta.slug } : {}),
+                    ...(localizedSlugs ? { slugs: localizedSlugs } : {}),
+                    ...(localizedTitles ? { titles: localizedTitles } : {}),
                     ...metaFields,
                     expectedModifiedDate: detail.modifiedDate ?? undefined,
                 });
@@ -157,6 +172,7 @@ export function registerUpdatePage(server: McpServer, ctx: ServerContext) {
                 pageId: updated._id,
                 slug: updated.slug,
                 title: updated.title,
+                ...(updated.slugs?.length ? { slugs: updated.slugs, slugAlternates: updated.slugAlternates ?? {} } : {}),
                 status: updated.status,
                 modifiedDate: updated.modifiedDate ?? null,
                 applied,

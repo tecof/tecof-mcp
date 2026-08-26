@@ -30,6 +30,10 @@ export function registerListPages(server: McpServer, ctx: ServerContext) {
                     id: p._id,
                     slug: p.slug,
                     title: p.title,
+                    /* Yalnız çok dilli adresi olan sayfalarda dolu — kalabalık
+                       yapmasın diye boşsa alan hiç basılmaz. */
+                    ...(p.slugs?.length ? { slugs: p.slugs } : {}),
+                    ...(p.titles?.length ? { titles: p.titles } : {}),
                     status: p.status,
                     isTemplate: !!p.isTemplate,
                     templateType: p.templateType ?? null,

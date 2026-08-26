@@ -157,8 +157,15 @@ export type PageStatus = "draft" | "published" | "changed";
 
 export type PageSummary = {
     _id: string;
+    /** Kanonik slug — varsayılan dilin adresi (backend bunu unique tutar). */
     slug: string;
     title: string;
+    /** Dil başına adres; boş dizi "her dil kanonik slug'ı kullanıyor" demektir. */
+    slugs?: LangValue[];
+    /** Dil başına sayfa adı */
+    titles?: LangValue[];
+    /** Okuması kolay hali: { tr: "hakkimizda", en: "about" } */
+    slugAlternates?: Record<string, string>;
     status: PageStatus;
     isTemplate: boolean;
     templateType?: string | null;

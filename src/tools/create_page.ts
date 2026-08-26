@@ -41,8 +41,10 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
             description:
                 "Yazarlık biçimindeki bölümlerden yeni bir TASLAK sayfa oluşturur. Header/Footer, layoutFrom sayfasındaki ortak bileşenlerden otomatik kopyalanır (varsayılan: home) — bunları sections içinde vermeyin. Önce list_components (full) ile alanları doğrulayın; dryRun:true ile kaydetmeden deneyin.",
             inputSchema: z.object({
-                slug: z.string().min(1).describe("URL slug'ı, örn. 'hakkimizda' (sunucu normalize eder)"),
+                slug: z.string().min(1).describe("URL slug'ı, örn. 'hakkimizda' (sunucu normalize eder). Varsayılan dilin adresidir."),
                 title: z.string().min(1).describe("Panelde görünen sayfa adı"),
+                slugs: LangShortcutSchema.optional().describe('Dile göre adres: {tr:"hakkimizda", en:"about"}. Verilmezse `slug` tüm açık dillere kopyalanır; eksik bırakılan dil de `slug`\'a düşer.'),
+                titles: LangShortcutSchema.optional().describe('Dile göre sayfa adı: {tr:"Hakkımızda", en:"About"}. Verilmezse `title` tüm dillerde kullanılır.'),
                 meta: MetaSchema,
                 sections: z.array(SectionSchema).describe("Sayfa bölümleri (Header/Footer HARİÇ), sırayla"),
                 layoutFrom: z.string().optional().describe('Header/Footer kaynağı: "home" (varsayılan), başka bir slug, ya da "none"'),
@@ -50,7 +52,7 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
             }),
             annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         },
-        wrapTool(ctx, "create_page", async ({ slug, title, meta, sections, layoutFrom, dryRun }) => {
+        wrapTool(ctx, "create_page", async ({ slug, title, slugs, titles, meta, sections, layoutFrom, dryRun }) => {
             const api = ctx.requireApi();
             const site = await ctx.requireTheme();
             const snapshot = await ctx.catalog.load();
@@ -95,6 +97,20 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
             warnings.push(...metaSink.warnings);
             if (metaSink.errors.length) return validationErrorResult("meta alanları geçersiz:", metaSink.errors, warnings);
 
+            /* Çok dilli adres/ad: meta alanlarıyla AYNI normalizasyondan geçer
+               (kısayol biçimleri: "metin" | {tr,en} | [{code,value}]). Backend
+               eksik dilleri varsayılan dile düşürür ve tüm dillerdeki çakışmayı
+               kontrol eder — burada yalnız biçim çevrilir. */
+            const langSink: IssueSink = { errors: [], warnings: [] };
+            const localizedSlugs = slugs !== undefined
+                ? (normalizeLanguageValue(slugs, site.lang, "slugs", langSink) as LangValue[])
+                : undefined;
+            const localizedTitles = titles !== undefined
+                ? (normalizeLanguageValue(titles, site.lang, "titles", langSink) as LangValue[])
+                : undefined;
+            warnings.push(...langSink.warnings);
+            if (langSink.errors.length) return validationErrorResult("slugs/titles alanları geçersiz:", langSink.errors, warnings);
+
             const outline = buildOutline(doc, snapshot.byName, site.lang);
             const allWarnings = [...noteWarnings, ...warnings.map((w) => `[${w.code}] ${w.path}: ${w.message}`)];
 
@@ -103,6 +119,8 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
                     dryRun: true,
                     slug,
                     title,
+                    ...(localizedSlugs ? { slugs: localizedSlugs } : {}),
+                    ...(localizedTitles ? { titles: localizedTitles } : {}),
                     outline,
                     layout: { header: layout.header?.node.type ?? null, footer: layout.footer?.node.type ?? null },
                     warnings: allWarnings,
@@ -115,6 +133,8 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
                 themeId: site.themeId,
                 slug,
                 title,
+                ...(localizedSlugs ? { slugs: localizedSlugs } : {}),
+                ...(localizedTitles ? { titles: localizedTitles } : {}),
                 ...metaFields,
                 draftData: doc,
             });
@@ -128,6 +148,7 @@ export function registerCreatePage(server: McpServer, ctx: ServerContext) {
                 pageId: created._id,
                 slug: created.slug,
                 title: created.title,
+                ...(created.slugs?.length ? { slugs: created.slugs, slugAlternates: created.slugAlternates ?? {} } : {}),
                 status: created.status,
                 outline: buildOutline(created.draftData ?? doc, snapshot.byName, site.lang),
                 urls: {

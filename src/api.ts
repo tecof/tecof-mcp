@@ -145,7 +145,7 @@ function explain(status: number, messageCode: string | null, serverMessage: stri
                 return { message: `Sunucu dokümanı reddetti${detail ? `: ${detail}` : "."}`, hint: null };
             }
             if (code === "already-exists") {
-                return { message: `Bu slug zaten kullanımda (${(data as any)?.slug ?? "?"}).`, hint: "Farklı bir slug verin ya da mevcut sayfayı update_page ile güncelleyin." };
+                return { message: `Bu slug zaten kullanımda (${(data as any)?.slug ?? "?"}).`, hint: "Farklı bir slug verin ya da mevcut sayfayı update_page ile güncelleyin. Çakışma başka bir DİLİN adresiyle de olabilir (ör. EN slug'ı başka sayfanın TR slug'ıyla aynı)." };
             }
             if (code === "theme-not-installed") {
                 return { message: "Verilen themeId bu mağazaya kurulu değil.", hint: "TECOF_THEME_ID / NEXT_PUBLIC_THEME_ID değerini get_site_context çıktısındaki themes listesiyle karşılaştırın." };
@@ -315,6 +315,10 @@ export class TecofApiClient {
         themeId: string;
         slug: string;
         title: string;
+        /** Dil başına adres — verilmezse backend `slug`'ı tüm açık dillere kopyalar. */
+        slugs?: LangValue[];
+        /** Dil başına sayfa adı — verilmezse backend `title`'ı tüm açık dillere kopyalar. */
+        titles?: LangValue[];
         metaTitle?: LangValue[];
         metaDescription?: LangValue[];
         draftData?: TecofDocument;
@@ -327,6 +331,9 @@ export class TecofApiClient {
         draftData?: TecofDocument;
         title?: string;
         slug?: string;
+        /** Kısmi gönderilebilir: verilmeyen dil eski adresini korur. */
+        slugs?: LangValue[];
+        titles?: LangValue[];
         metaTitle?: LangValue[];
         metaDescription?: LangValue[];
         expectedModifiedDate?: string | null;
