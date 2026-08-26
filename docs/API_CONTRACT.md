@@ -156,6 +156,15 @@ Hatalar (400 `invalid-document`, `data: { errors: [{code, path, message}] , warn
 | `list_pages` | `{ includeTemplates?: boolean }` | liste | readOnly |
 | `get_page` | `{ page: string (id\|slug), mode?: "outline"\|"full" }` | outline: root props + section listesi `[{id,type,label,slots:{slot:[{id,type,text?}]}}]`; full: draftData JSON | readOnly |
 | `validate_document` | `{ document }` **veya** `{ sections }` | `{ ok, errors, warnings, normalizedDocument? }` | readOnly |
+| `list_cms_collections` | `{}` | CMS içerik tipleri; `{total, collections:[{id,slug,name,displayField,fieldCount,itemCount}]}` | readOnly |
+| `get_cms_collection` | `{ collection: string (id\|slug) }` | alan şeması + `fields[].expects` (beklenen veri biçimi), `languages` | readOnly |
+| `create_cms_collection` | `{ slug, name?, description?, icon?, displayField?, fields? }` | içerik tipi açar; şema katı doğrulanır (400 `invalid-fields` + `errors[]`) | write |
+| `update_cms_collection` | `{ collection, slug?, name?, fields?, displayField?, allowFieldLoss? }` | `fields` tam değiştirme; veri kaybında 400 `field-loss-requires-confirm` | write, destructive |
+| `list_cms_items` | `{ collection, status?, search?, page?, limit? }` | içerik özeti (`data` dönmez) | readOnly |
+| `get_cms_item` | `{ collection, item }` | tam içerik + `modifiedDate` | readOnly |
+| `create_cms_item` | `{ collection, slug, data?, metaTitle?, metaDescription? }` | TASLAK içerik; `data` şemaya göre doğrulanır (400 `invalid-item-data` + `errors[]`) | write |
+| `update_cms_item` | `{ collection, item, data?, dataMode?: "merge"\|"replace", slug?, allowPublishedEdit?, expectedModifiedDate? }` | `data` varsayılan MERGE (kısmi gövde alan silmez); `replace` ile tam değiştirme. Kilit otomatik doldurulur; yayındaki içerik onay ister | write |
+| `delete_cms_item` | `{ collection, item, confirm: true, allowPublishedEdit? }` | soft delete | write, destructive |
 | `create_page` | `{ slug, title, slugs?, titles?, meta?: {metaTitle?, metaDescription?}, sections: Section[], layoutFrom?: "home"\|"<slug>"\|"none", dryRun?: boolean }` | taslak oluşturur; Header/Footer `layoutFrom` sayfasındaki ortak bileşen ref'lerinden kopyalanır (ilk düğüm type /Header/ → başa, son düğüm /Footer/ → sona; yalnız `sharedComponentId` taşıyanlar); yanıt `{ pageId, slug, status, outline, urls:{panel, storefrontPreview, localPreview}, warnings }` | write, idempotent:false |
 | `update_page` | `{ page, operations: Operation[], meta?: {title?, slug?, metaTitle?, metaDescription?}, dryRun? }` **veya** `{ page, document }` | GET → ops uygula → validate → PUT (`expectedModifiedDate`) | write |
 | `delete_page` | `{ page, confirm: true }` | soft delete | destructive + `anthropic/requiresUserInteraction` |

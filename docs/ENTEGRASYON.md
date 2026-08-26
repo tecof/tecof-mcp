@@ -134,6 +134,12 @@ Bu akışı ekibe dayatmak için tema reposundaki `CLAUDE.md` / `.agents/AGENTS.
 | `get_page` | okuma | `page` (id\|slug), `mode?: outline\|full` | outline: bölüm ağacı; full: doküman JSON |
 | `validate_document` | okuma (yerel) | `sections` **veya** `document` | `{ok, errors, warnings}` |
 | `create_page` | yazma | `slug`, `title`, `slugs?`, `titles?`, `sections`, `meta?`, `layoutFrom?`, `dryRun?` | pageId, outline, panel + önizleme linkleri |
+| `list_cms_collections` | okuma | — | CMS içerik tipleri |
+| `get_cms_collection` | okuma | `collection` | Alan şeması + beklenen veri biçimleri |
+| `create_cms_collection` / `update_cms_collection` | yazma | `slug`/`fields`… | İçerik tipi aç/güncelle (`allowFieldLoss` veri kaybı onayı) |
+| `list_cms_items` / `get_cms_item` | okuma | `collection`, `item` | İçerik listesi / tam kayıt |
+| `create_cms_item` / `update_cms_item` | yazma | `collection`, `slug`, `data` | TASLAK içerik yaz (`allowPublishedEdit` canlı içerik onayı) |
+| `delete_cms_item` | yazma | `collection`, `item`, `confirm` | İçeriği sil (soft) |
 | `update_page` | yazma | `page` + `operations` **veya** `document`, `meta?`, `dryRun?` | uygulanan işlemler, outline |
 | `delete_page` | **yıkıcı** | `page`, `confirm: true` | soft delete sonucu |
 | `get_preview_url` | okuma | `page`, `locale?` | 1 saatlik önizleme linki (vitrin + localhost) |

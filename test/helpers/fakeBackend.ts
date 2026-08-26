@@ -29,6 +29,9 @@ export type FakeBackendOptions = {
     defaultLanguage?: string;
     scopes?: string[];
     pages?: Partial<FakePage>[];
+    /** CMS koleksiyonları (içerik tipleri) ve içerikleri */
+    cmsCollections?: Array<{ _id?: string; slug: string; name?: any; displayField?: string; fields?: any[] }>;
+    cmsItems?: Array<{ _id?: string; collectionSlug: string; slug: string; data?: any; status?: string; modifiedDate?: string }>;
     /** Her istekte çağrılır — 429 vb. simülasyonu için {status, body} dönebilir */
     intercept?: (req: { method: string; url: URL; body: any }) => { status: number; body: any } | null | undefined;
     /** POST/PUT yanıtlarının zarf KÖKÜNE konacak sunucu uyarıları (gerçek backend biçimi: DocIssue[]) */
@@ -38,7 +41,7 @@ export type FakeBackendOptions = {
 export function createFakeBackend(opts: FakeBackendOptions = {}) {
     const token = opts.token ?? "tcf_test_token";
     const themeId = opts.themeId ?? "64b000000000000000000001";
-    const scopes = opts.scopes ?? ["pages:read", "pages:write"];
+    const scopes = opts.scopes ?? ["pages:read", "pages:write", "cms:read", "cms:write"];
     const languages = opts.languages ?? ["tr", "en"];
     const defaultLanguage = opts.defaultLanguage ?? "tr";
 
@@ -61,6 +64,31 @@ export function createFakeBackend(opts: FakeBackendOptions = {}) {
         createDate: p.createDate ?? "2026-08-19T08:00:00.000Z",
         publishedDate: p.publishedDate ?? null,
     }));
+
+    const cmsCollections = (opts.cmsCollections ?? []).map((c) => ({
+        _id: c._id ?? newId(),
+        themeId,
+        slug: c.slug,
+        name: c.name ?? [{ code: "tr", value: c.slug }],
+        displayField: c.displayField ?? (c.fields?.[0]?.shortcode ?? "title"),
+        fields: c.fields ?? [],
+    }));
+
+    const cmsItems = (opts.cmsItems ?? []).map((i) => {
+        const collection = cmsCollections.find((c) => c.slug === i.collectionSlug);
+        return {
+            _id: i._id ?? newId(),
+            collectionId: collection?._id ?? newId(),
+            slug: i.slug,
+            data: i.data ?? {},
+            metaTitle: [] as any[],
+            metaDescription: [] as any[],
+            status: i.status ?? "draft",
+            publishedDate: null as string | null,
+            modifiedDate: i.modifiedDate ?? "2026-08-19T09:00:00.000Z",
+            createDate: "2026-08-19T08:00:00.000Z",
+        };
+    });
 
     const calls: Array<{ method: string; url: string; headers: Record<string, string>; body: any }> = [];
 
@@ -197,8 +225,142 @@ export function createFakeBackend(opts: FakeBackendOptions = {}) {
             }
         }
 
+        /* ── CMS ────────────────────────────────────────────────────────────
+           Gerçek uçların (routes/api/v1/cms.ts) davranışını taklit eder:
+           koleksiyon/içerik id VEYA slug ile bulunur, yazmalar taslak doğar,
+           yayındaki içerik allowPublishedEdit ister. */
+        const findCollection = (ref: string) =>
+            cmsCollections.find((c) => (/^[0-9a-f]{24}$/i.test(ref) ? c._id === ref : c.slug === ref));
+        const findItem = (collectionId: string, ref: string) =>
+            cmsItems.find((i) => i.collectionId === collectionId && (/^[0-9a-f]{24}$/i.test(ref) ? i._id === ref : i.slug === ref));
+
+        if (path === "/cms/collections" && method === "GET") {
+            const denied = requireScope("cms:read");
+            if (denied) return denied;
+            return ok(
+                cmsCollections.map((c) => ({ ...c, fieldCount: c.fields.length, itemCount: cmsItems.filter((i) => i.collectionId === c._id).length })),
+                { totalData: cmsCollections.length }
+            );
+        }
+
+        if (path === "/cms/collections" && method === "POST") {
+            const denied = requireScope("cms:write");
+            if (denied) return denied;
+            if (cmsCollections.some((c) => c.slug === body?.slug)) return fail(400, "already-exists", "Slug kullanımda", { slug: body.slug });
+            const created = {
+                _id: newId(), themeId, slug: String(body?.slug ?? "koleksiyon"),
+                name: body?.name ?? [], displayField: body?.displayField ?? "title", fields: body?.fields ?? [],
+            };
+            cmsCollections.push(created);
+            return envelope(201, { success: true, message: "ok", messageCode: "success-add", data: created });
+        }
+
+        const cmsMatch = path.match(/^\/cms\/collections\/([^/]+)(?:\/items(?:\/([^/]+))?)?$/);
+        if (cmsMatch) {
+            const collection = findCollection(cmsMatch[1]);
+            const itemRef = cmsMatch[2];
+            const isItemsPath = path.includes("/items");
+
+            if (!collection) {
+                const denied = requireScope(method === "GET" ? "cms:read" : "cms:write");
+                if (denied) return denied;
+                return fail(404, "not-found", "Koleksiyon bulunamadı");
+            }
+
+            if (!isItemsPath) {
+                if (method === "GET") {
+                    const denied = requireScope("cms:read");
+                    if (denied) return denied;
+                    return ok(collection);
+                }
+                if (method === "PUT") {
+                    const denied = requireScope("cms:write");
+                    if (denied) return denied;
+                    if (body?.fields !== undefined) {
+                        const removed = collection.fields.filter((f: any) => !body.fields.some((n: any) => n.shortcode === f.shortcode));
+                        const holdsData = removed.some((f: any) => cmsItems.some((i) => i.collectionId === collection._id && i.data?.[f.shortcode] !== undefined));
+                        if (holdsData && body.allowFieldLoss !== true) {
+                            return fail(400, "field-loss-requires-confirm", "Veri kaybı onayı gerekli", {
+                                removed: removed.map((f: any) => f.shortcode), affectedItems: 1,
+                            });
+                        }
+                        collection.fields = body.fields;
+                    }
+                    if (body?.slug !== undefined) collection.slug = body.slug;
+                    if (body?.displayField !== undefined) collection.displayField = body.displayField;
+                    return ok(collection, { warnings: [] });
+                }
+            }
+
+            if (isItemsPath && !itemRef) {
+                if (method === "GET") {
+                    const denied = requireScope("cms:read");
+                    if (denied) return denied;
+                    const list = cmsItems.filter((i) => i.collectionId === collection._id);
+                    return ok(list, { totalData: list.length, meta: { collectionId: collection._id, collectionSlug: collection.slug, displayField: collection.displayField } });
+                }
+                if (method === "POST") {
+                    const denied = requireScope("cms:write");
+                    if (denied) return denied;
+                    if (body?.status !== undefined) return fail(400, "publish-not-supported", "Yayınlama desteklenmiyor", { fields: ["status"] });
+                    /* Gerçek sunucu gibi: bilinmeyen alan ve çok dilli biçim hatası 400 */
+                    const errors: any[] = [];
+                    for (const key of Object.keys(body?.data ?? {})) {
+                        const field = collection.fields.find((f: any) => f.shortcode === key);
+                        if (!field) errors.push({ code: "unknown-field", path: `data.${key}`, message: "böyle bir alan yok" });
+                        else if (field.isMultilingual && !Array.isArray(body.data[key])) {
+                            errors.push({ code: "localized-shape", path: `data.${key}`, message: "[{code,value}] bekler" });
+                        }
+                    }
+                    if (errors.length) return fail(400, "invalid-item-data", "Geçersiz içerik", { errors });
+                    const created = {
+                        _id: newId(), collectionId: collection._id, slug: String(body?.slug ?? "icerik"),
+                        data: body?.data ?? {}, metaTitle: body?.metaTitle ?? [], metaDescription: body?.metaDescription ?? [],
+                        status: "draft", publishedDate: null, modifiedDate: now(), createDate: now(),
+                    };
+                    cmsItems.push(created);
+                    return envelope(201, { success: true, message: "ok", messageCode: "success-add", data: created });
+                }
+            }
+
+            if (isItemsPath && itemRef) {
+                const item = findItem(collection._id, itemRef);
+                if (!item) {
+                    const denied = requireScope(method === "GET" ? "cms:read" : "cms:write");
+                    if (denied) return denied;
+                    return fail(404, "not-found", "İçerik bulunamadı");
+                }
+                if (method === "GET") {
+                    const denied = requireScope("cms:read");
+                    if (denied) return denied;
+                    return ok(item);
+                }
+                if (method === "PUT") {
+                    const denied = requireScope("cms:write");
+                    if (denied) return denied;
+                    if (body?.status !== undefined) return fail(400, "publish-not-supported", "Yayınlama desteklenmiyor", { fields: ["status"] });
+                    if (item.status === "published" && body?.allowPublishedEdit !== true) {
+                        return fail(400, "published-item-requires-confirm", "İçerik yayında", { status: item.status });
+                    }
+                    if (body?.data !== undefined) item.data = body.data;
+                    if (body?.slug !== undefined) item.slug = body.slug;
+                    item.modifiedDate = now();
+                    return ok(item, { warnings: [] });
+                }
+                if (method === "DELETE") {
+                    const denied = requireScope("cms:write");
+                    if (denied) return denied;
+                    if (item.status === "published" && body?.allowPublishedEdit !== true) {
+                        return fail(400, "published-item-requires-confirm", "İçerik yayında", { status: item.status });
+                    }
+                    cmsItems.splice(cmsItems.indexOf(item), 1);
+                    return ok({ _id: item._id, slug: item.slug, status: item.status, deleted: true });
+                }
+            }
+        }
+
         return fail(404, "not-found", `Bilinmeyen uç: ${method} ${path}`);
     };
 
-    return { fetch: fetchImpl, calls, pages, token, themeId };
+    return { fetch: fetchImpl, calls, pages, cmsCollections, cmsItems, token, themeId };
 }

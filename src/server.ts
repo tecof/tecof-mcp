@@ -7,7 +7,16 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createRequire } from "node:module";
 import { ServerContext } from "./context.js";
+import { registerCreateCmsCollection } from "./tools/create_cms_collection.js";
+import { registerCreateCmsItem } from "./tools/create_cms_item.js";
 import { registerCreatePage } from "./tools/create_page.js";
+import { registerDeleteCmsItem } from "./tools/delete_cms_item.js";
+import { registerGetCmsCollection } from "./tools/get_cms_collection.js";
+import { registerGetCmsItem } from "./tools/get_cms_item.js";
+import { registerListCmsCollections } from "./tools/list_cms_collections.js";
+import { registerListCmsItems } from "./tools/list_cms_items.js";
+import { registerUpdateCmsCollection } from "./tools/update_cms_collection.js";
+import { registerUpdateCmsItem } from "./tools/update_cms_item.js";
 import { registerDeletePage } from "./tools/delete_page.js";
 import { registerGetPage } from "./tools/get_page.js";
 import { registerGetPreviewUrl } from "./tools/get_preview_url.js";
@@ -31,14 +40,15 @@ export const SERVER_VERSION: string = pkg.version;
  * akış ve yasaklar başta, ayrıntı sonda.
  */
 export const SERVER_INSTRUCTIONS =
-    "Tecof sayfa araçları. Yazmalar TASLAK'tır; yayınlamayı kullanıcı panelden yapar. " +
-    "Akış: get_site_context → list_components (full) → validate_document → create_page/update_page → get_preview_url. " +
-    "Ortak bileşenlere (Header/Footer) dokunma. Çok dilli alanları tüm diller için doldur. " +
-    "Bölümleri yazarlık biçimiyle ver: {type, props, variant?, slots:{slot:[...]}} — draftData JSON'u elle yazma; id üretme (MCP üretir). " +
-    "Alan adlarını ve select seçeneklerini list_components çıktısından al; slot'a yalnız allow listesindeki element tiplerini koy. " +
-    "update_page için id'leri get_page (outline) çıktısından al; 409 alırsan sayfayı yeniden oku. " +
-    "delete_page yalnız kullanıcı açıkça onayladıysa (confirm:true). " +
-    "Görsel için: list_media (mevcut kütüphane), import_image (bir URL'den al) ya da generate_image (AI, mağaza kredisinden düşer) — dönen uploadValue'yu bölümün görsel alanına koy.";
+    /* Sözleşme §3.4 — ilk 512 karakter kritik (Codex yalnız o kadarını gösterir).
+       Bütçe test'te ölçülür (test/server.test.ts): akış ve yasaklar ilk cümlelerde,
+       ayrıntı araç açıklamalarında durur — burada tekrarlanmaz. */
+    "Tecof sayfa + CMS araçları. Tüm yazmalar TASLAK'tır; yayınlamayı kullanıcı panelden yapar. " +
+    "Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. " +
+    "CMS: list_cms_collections → get_cms_collection (alan biçimleri) → create_cms_item. " +
+    "Ortak bileşenlere (Header/Footer) dokunma; id üretme; çok dilli alanları tüm dillerde doldur. " +
+    "Görsel: list_media / import_image / generate_image çıktısındaki uploadValue'yu kullan. " +
+    "Silme ve canlı içerik değişikliği kullanıcı onayı ister.";
 
 export type BuildServerOptions = {
     ctx: ServerContext;
@@ -58,6 +68,18 @@ export function buildServer({ ctx }: BuildServerOptions): McpServer {
     registerCreatePage(server, ctx);
     registerUpdatePage(server, ctx);
     registerDeletePage(server, ctx);
+
+    /* Headless CMS — koleksiyon (içerik tipi) şeması + içerik kayıtları.
+       Sayfa araçlarıyla aynı sözleşme: yazmalar TASLAK'tır, yayın panelden. */
+    registerListCmsCollections(server, ctx);
+    registerGetCmsCollection(server, ctx);
+    registerCreateCmsCollection(server, ctx);
+    registerUpdateCmsCollection(server, ctx);
+    registerListCmsItems(server, ctx);
+    registerGetCmsItem(server, ctx);
+    registerCreateCmsItem(server, ctx);
+    registerUpdateCmsItem(server, ctx);
+    registerDeleteCmsItem(server, ctx);
     registerGetPreviewUrl(server, ctx);
     registerListMedia(server, ctx);
     registerImportImage(server, ctx);

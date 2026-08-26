@@ -153,6 +153,67 @@ export type MeResponse = {
     panelUrl: string;
 };
 
+/* ─── Headless CMS ─────────────────────────────────────────────────────────
+   Koleksiyon = içerik tipi (alan şeması), item = içerik kaydı. `data` anahtarları
+   alanların shortcode'udur; biçim sözleşmesi backend'de zorunlu kılınır
+   (app/src/cmsService.ts) ve get_cms_collection çıktısında özetlenir. */
+
+export type CmsFieldType =
+    | "text" | "plain-text" | "rich-text"
+    | "image" | "multi-image" | "video-link"
+    | "link" | "email" | "phone"
+    | "number" | "date-time" | "switch"
+    | "color" | "option" | "file"
+    | "reference" | "multi-reference" | "repeater";
+
+export type CmsFieldOption = { label?: LangValue[]; value: string };
+
+export type CmsField = {
+    shortcode: string;
+    label?: LangValue[];
+    type: CmsFieldType;
+    required?: boolean;
+    isMultilingual?: boolean;
+    options?: CmsFieldOption[];
+    referenceCollectionId?: string | null;
+    min?: number | null;
+    max?: number | null;
+    order?: number;
+    subFields?: CmsField[];
+};
+
+export type CmsCollection = {
+    _id: string;
+    slug: string;
+    name?: LangValue[];
+    description?: LangValue[];
+    icon?: string;
+    displayField?: string;
+    fields?: CmsField[];
+    fieldCount?: number;
+    itemCount?: number;
+    status?: string;
+    modifiedDate?: string;
+    createDate?: string;
+};
+
+export type CmsItemStatus = "draft" | "scheduled" | "published";
+
+export type CmsItem = {
+    _id: string;
+    collectionId: string;
+    slug: string;
+    data: Record<string, unknown>;
+    metaTitle?: LangValue[];
+    metaDescription?: LangValue[];
+    status: CmsItemStatus;
+    publishedDate?: string | null;
+    scheduledDate?: string | null;
+    order?: number;
+    modifiedDate?: string;
+    createDate?: string;
+};
+
 export type PageStatus = "draft" | "published" | "changed";
 
 export type PageSummary = {

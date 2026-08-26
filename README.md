@@ -115,9 +115,33 @@ reposunun kökünde başlatır, sunucu `.env`'i oradan okur.
 | `update_page` | `page`, `operations` **veya** `document`, `meta?`, `dryRun?` | GET → işlemleri uygula → doğrula → PUT (`expectedModifiedDate` ile iyimser kilit; 409'da net mesaj) |
 | `delete_page` | `page`, `confirm: true` | Soft delete — kullanıcı onayı şart |
 | `get_preview_url` | `page`, `locale?` | 1 saatlik taslak önizleme linkleri (storefront + yerel) |
+| `list_cms_collections` | — | Headless CMS içerik tipleri (slug, ad, alan/içerik sayısı) |
+| `get_cms_collection` | `collection` (id\|slug) | Alan şeması **+ her alan için beklenen veri biçimi** (çok dilli mi, dosya objesi mi, referans id'si mi) — içerik yazmadan önce çağrılır |
+| `create_cms_collection` | `slug`, `name?`, `fields?`, `displayField?`, `icon?` | İçerik tipi açar; alan şeması katı doğrulanır (shortcode, tip, option, repeater, reference) |
+| `update_cms_collection` | `collection`, `fields?`, `slug?`, `displayField?`, `allowFieldLoss?` | Şemayı günceller; `fields` verilirse tamamen değişir. Veri taşıyan alanı silmek/tipini değiştirmek `allowFieldLoss:true` ister |
+| `list_cms_items` | `collection`, `status?`, `search?`, `page?`, `limit?` | İçerik listesi (özet; `data` dönmez) |
+| `get_cms_item` | `collection`, `item` (id\|slug) | İçeriğin tamamı + `modifiedDate` (iyimser kilit için) |
+| `create_cms_item` | `collection`, `slug`, `data?`, `metaTitle?`, `metaDescription?` | **TASLAK** içerik oluşturur; `data` alan şemasına göre katı doğrulanır |
+| `update_cms_item` | `collection`, `item`, `data?`, `dataMode?`, `slug?`, `allowPublishedEdit?` | `data` varsayılan olarak **birleştirilir** (verilmeyen alan korunur); silmek için `dataMode:"replace"`. İyimser kilit otomatik. Yayındaki içerik `allowPublishedEdit:true` ister |
+| `delete_cms_item` | `collection`, `item`, `confirm: true`, `allowPublishedEdit?` | Soft delete — kullanıcı onayı şart; yayındaki içerik ayrıca onay ister |
 
 Sonuçlar `content[0].text` (JSON) + `structuredContent` olarak döner; hatalar `isError: true`
 ile alan/yol bilgisi taşır (ajan düzeltebilsin diye).
+
+### Headless CMS akışı
+
+`list_cms_collections` → `get_cms_collection` (alan biçimleri) → `create_cms_item` / `update_cms_item`.
+
+Sözleşme, sayfa araçlarıyla aynı: **yazmalar taslaktır**, yayınlamayı kullanıcı panelden yapar
+(`status` göndermek hata verir). Sayfalardan farklı olarak CMS'te taslak katmanı yoktur — yayındaki
+bir içeriği değiştirmek/silmek anında canlıya yansır, bu yüzden `allowPublishedEdit: true` istenir;
+bu bayrağı yalnız kullanıcı açıkça onayladıysa gönderin. Alan şeması değişikliğinde veri kaybı
+riski varsa (`allowFieldLoss`) aynı kural geçerlidir.
+
+Veri biçimleri (`data` içinde): çok dilli alanlar `[{code,value}]`; görsel/dosya alanları
+`list_media` / `import_image` / `generate_image` çıktısındaki **tam dosya objesi dizisi**;
+`reference` alanları hedef içeriğin 24 haneli id'si; `repeater` satır nesnesi dizisi.
+Kesin liste her zaman `get_cms_collection` çıktısındadır.
 
 ### `update_page` operation'ları
 

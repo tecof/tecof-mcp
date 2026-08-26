@@ -11,6 +11,8 @@
 
 import type {
     ApiEnvelope,
+    CmsCollection,
+    CmsItem,
     DocIssue,
     LangValue,
     MeResponse,
@@ -92,7 +94,15 @@ export function describeInsecureApiUrl(raw: string | null | undefined): string |
 }
 
 /** messageCode → insan okunur açıklama + ipucu. Bilinmeyen kodlarda generic metin. */
-function explain(status: number, messageCode: string | null, serverMessage: string | undefined, data: unknown): { message: string; hint: string | null } {
+function explain(
+    status: number,
+    messageCode: string | null,
+    serverMessage: string | undefined,
+    data: unknown,
+    /* İpuçları kaynağa göre değişir: CMS hatasında "list_pages ile doğrulayın"
+       demek ajanı yanlış araca yollar. */
+    isCms = false
+): { message: string; hint: string | null } {
     const code = messageCode ?? "";
     switch (status) {
         case 401: {
@@ -125,16 +135,31 @@ function explain(status: number, messageCode: string | null, serverMessage: stri
             return { message: serverMessage ?? "Bu işlem için yetki yok.", hint: null };
         }
         case 404:
-            return { message: serverMessage ?? "Kayıt bulunamadı.", hint: "Sayfa id/slug'ını list_pages ile doğrulayın." };
-        case 409:
             return {
-                message: "Sayfa siz okuduktan sonra başka biri tarafından değiştirildi (iyimser kilit).",
-                hint: "get_page ile güncel hâlini alıp değişikliğinizi yeniden uygulayın.",
+                message: serverMessage ?? "Kayıt bulunamadı.",
+                hint: isCms
+                    ? "Koleksiyon/içerik id ya da slug'ını list_cms_collections / list_cms_items ile doğrulayın."
+                    : "Sayfa id/slug'ını list_pages ile doğrulayın.",
             };
+        case 409:
+            return isCms
+                ? {
+                    message: "İçerik siz okuduktan sonra başka biri tarafından değiştirildi (iyimser kilit).",
+                    hint: "get_cms_item ile güncel hâlini alıp değişikliğinizi yeniden uygulayın.",
+                }
+                : {
+                    message: "Sayfa siz okuduktan sonra başka biri tarafından değiştirildi (iyimser kilit).",
+                    hint: "get_page ile güncel hâlini alıp değişikliğinizi yeniden uygulayın.",
+                };
         case 429:
             return {
                 message: "İstek sınırı aşıldı (okuma 120/dk, yazma 30/dk).",
-                hint: "Kısa bir süre bekleyip tekrar deneyin; toplu değişiklikleri tek update_page çağrısında birleştirin.",
+                /* Toplu içerik üretiminde (ör. 40 blog yazısı) yazma limiti
+                   yarı yolda vurur ve koleksiyon yarım kalır — ajan bunu
+                   bilerek aralıklı ilerlemeli. */
+                hint: isCms
+                    ? "Yazma sınırı dakikada 30: toplu içerik aktarımını parçalara bölün, aralarda bekleyin; yarım kalan kayıtları list_cms_items ile doğrulayıp kaldığınız yerden sürdürün."
+                    : "Kısa bir süre bekleyip tekrar deneyin; toplu değişiklikleri tek update_page çağrısında birleştirin.",
             };
         case 400: {
             if (code === "invalid-document") {
@@ -281,7 +306,7 @@ export class TecofApiClient {
         if (!res.ok || !envelope || envelope.success === false) {
             const status = res.status;
             const code = envelope?.messageCode ?? null;
-            const { message, hint } = explain(status, code, envelope?.message, envelope?.data);
+            const { message, hint } = explain(status, code, envelope?.message, envelope?.data, pathname.startsWith("/cms"));
             throw new ApiError({ status, message, messageCode: code, data: envelope?.data, hint });
         }
 
@@ -340,6 +365,100 @@ export class TecofApiClient {
     }): Promise<PageWriteResult> {
         const { data, envelope } = await this.request<PageDetail>("PUT", `/pages/${encodeURIComponent(id)}`, { body });
         return { page: data, warnings: extractWarnings(envelope, data) };
+    }
+
+    /* ─── Headless CMS ────────────────────────────────────────────────────
+       Uçlar /api/v1/cms/*; scope cms:read / cms:write. `collectionRef` ve
+       `itemRef` hem 24-hex id hem slug kabul eder. */
+
+    async listCmsCollections(themeId?: string | null): Promise<{ items: CmsCollection[]; total: number }> {
+        const { data, envelope } = await this.request<CmsCollection[]>("GET", "/cms/collections", { query: { themeId: themeId ?? undefined } });
+        return { items: data ?? [], total: envelope.totalData ?? (data ?? []).length };
+    }
+
+    async getCmsCollection(collectionRef: string, themeId?: string | null): Promise<CmsCollection> {
+        return (await this.request<CmsCollection>("GET", `/cms/collections/${encodeURIComponent(collectionRef)}`, {
+            query: { themeId: themeId ?? undefined },
+        })).data;
+    }
+
+    async createCmsCollection(body: {
+        themeId?: string | null;
+        slug: string;
+        name?: LangValue[];
+        description?: LangValue[];
+        icon?: string;
+        displayField?: string;
+        fields?: unknown[];
+    }): Promise<CmsCollection> {
+        return (await this.request<CmsCollection>("POST", "/cms/collections", { body })).data;
+    }
+
+    async updateCmsCollection(id: string, body: {
+        slug?: string;
+        name?: LangValue[];
+        description?: LangValue[];
+        icon?: string;
+        displayField?: string;
+        fields?: unknown[];
+        allowFieldLoss?: boolean;
+    }): Promise<{ collection: CmsCollection; warnings: string[] }> {
+        const { data, envelope } = await this.request<CmsCollection>("PUT", `/cms/collections/${encodeURIComponent(id)}`, { body });
+        return { collection: data, warnings: ((envelope as any)?.warnings as string[]) ?? [] };
+    }
+
+    async listCmsItems(collectionRef: string, params: { themeId?: string | null; status?: string; search?: string; page?: number; limit?: number } = {}): Promise<{
+        items: CmsItem[];
+        total: number;
+        meta: { collectionId?: string; collectionSlug?: string; displayField?: string };
+    }> {
+        const { data, envelope } = await this.request<CmsItem[]>("GET", `/cms/collections/${encodeURIComponent(collectionRef)}/items`, {
+            query: {
+                themeId: params.themeId ?? undefined,
+                status: params.status,
+                search: params.search,
+                page: params.page ? String(params.page) : undefined,
+                limit: params.limit ? String(params.limit) : undefined,
+            },
+        });
+        return { items: data ?? [], total: envelope.totalData ?? (data ?? []).length, meta: ((envelope as any)?.meta ?? {}) };
+    }
+
+    async getCmsItem(collectionRef: string, itemRef: string, themeId?: string | null): Promise<CmsItem> {
+        return (await this.request<CmsItem>("GET", `/cms/collections/${encodeURIComponent(collectionRef)}/items/${encodeURIComponent(itemRef)}`, {
+            query: { themeId: themeId ?? undefined },
+        })).data;
+    }
+
+    async createCmsItem(collectionRef: string, body: {
+        themeId?: string | null;
+        slug: string;
+        data?: Record<string, unknown>;
+        metaTitle?: LangValue[];
+        metaDescription?: LangValue[];
+    }): Promise<CmsItem> {
+        return (await this.request<CmsItem>("POST", `/cms/collections/${encodeURIComponent(collectionRef)}/items`, { body })).data;
+    }
+
+    async updateCmsItem(collectionRef: string, id: string, body: {
+        themeId?: string | null;
+        slug?: string;
+        data?: Record<string, unknown>;
+        metaTitle?: LangValue[];
+        metaDescription?: LangValue[];
+        allowPublishedEdit?: boolean;
+        expectedModifiedDate?: string | null;
+    }): Promise<{ item: CmsItem; warnings: string[] }> {
+        const { data, envelope } = await this.request<CmsItem>("PUT", `/cms/collections/${encodeURIComponent(collectionRef)}/items/${encodeURIComponent(id)}`, { body });
+        return { item: data, warnings: ((envelope as any)?.warnings as string[]) ?? [] };
+    }
+
+    async deleteCmsItem(collectionRef: string, id: string, body: { themeId?: string | null; allowPublishedEdit?: boolean } = {}): Promise<{ _id: string; slug: string; status: string; deleted: boolean }> {
+        return (await this.request<{ _id: string; slug: string; status: string; deleted: boolean }>(
+            "DELETE",
+            `/cms/collections/${encodeURIComponent(collectionRef)}/items/${encodeURIComponent(id)}`,
+            { body }
+        )).data;
     }
 
     async deletePage(id: string): Promise<{ _id: string; slug: string; status: string }> {

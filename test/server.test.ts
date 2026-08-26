@@ -53,18 +53,35 @@ async function setup(options: { backend?: FakeBackendOptions; config?: Partial<T
 }
 
 describe("MCP sunucusu — tools/list ve instructions", () => {
-    it("12 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
+    it("21 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
         const { client } = await setup();
         expect(client.init.serverInfo.name).toBe("tecof");
         expect(client.init.instructions).toBe(SERVER_INSTRUCTIONS);
-        expect(SERVER_INSTRUCTIONS.slice(0, 512)).toContain("get_site_context → list_components (full) → validate_document → create_page/update_page → get_preview_url");
+        /* 512 karakter BÜTÇE: Codex gibi istemciler yalnız ilk 512 karakteri
+           gösteriyor — kritik akışlar oraya sığmalı, metin de bütçeyi aşmamalı. */
+        expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(512);
+        expect(SERVER_INSTRUCTIONS).toContain("TASLAK");
+        expect(SERVER_INSTRUCTIONS).toContain("get_site_context → list_components → create_page/update_page → get_preview_url");
+        expect(SERVER_INSTRUCTIONS).toContain("list_cms_collections → get_cms_collection");
 
         const tools = await client.listTools();
         const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
         expect(Object.keys(byName).sort()).toEqual(
-            ["create_page", "delete_page", "generate_image", "get_page", "get_preview_url", "get_site_context", "import_image", "list_components", "list_media", "list_pages", "update_page", "validate_document"]
+            [
+                "create_cms_collection", "create_cms_item", "create_page",
+                "delete_cms_item", "delete_page",
+                "generate_image",
+                "get_cms_collection", "get_cms_item", "get_page", "get_preview_url", "get_site_context",
+                "import_image",
+                "list_cms_collections", "list_cms_items", "list_components", "list_media", "list_pages",
+                "update_cms_collection", "update_cms_item", "update_page",
+                "validate_document"
+            ]
         );
-        for (const n of ["get_site_context", "list_components", "list_pages", "get_page", "validate_document", "get_preview_url", "list_media"]) {
+        for (const n of [
+            "get_site_context", "list_components", "list_pages", "get_page", "validate_document", "get_preview_url", "list_media",
+            "list_cms_collections", "get_cms_collection", "list_cms_items", "get_cms_item"
+        ]) {
             expect(byName[n].annotations.readOnlyHint, n).toBe(true);
         }
         // Görsel yazma araçları: yıkıcı değil ama salt-okunur da değil
@@ -77,6 +94,14 @@ describe("MCP sunucusu — tools/list ve instructions", () => {
         expect(byName.delete_page.inputSchema.properties.confirm.const).toBe(true);
         expect(byName.create_page.annotations.readOnlyHint).toBe(false);
         expect(byName.create_page.inputSchema.required).toEqual(["slug", "title", "sections"]);
+
+        /* CMS silme, sayfa silmeyle AYNI sözleşmeye tabidir: onay + yıkıcı işaret. */
+        expect(byName.delete_cms_item.annotations.destructiveHint).toBe(true);
+        expect(byName.delete_cms_item._meta["anthropic/requiresUserInteraction"]).toBe(true);
+        expect(byName.delete_cms_item.inputSchema.properties.confirm.const).toBe(true);
+        /* Şema değişikliği veri kaybettirebildiği için koleksiyon güncelleme de yıkıcı sayılır. */
+        expect(byName.update_cms_collection.annotations.destructiveHint).toBe(true);
+        expect(byName.create_cms_item.inputSchema.required).toEqual(["collection", "slug"]);
     });
 });
 
@@ -87,7 +112,8 @@ describe("get_site_context / list_pages / get_page / get_preview_url", () => {
         expect(r.isError).toBe(false);
         expect(r.data.merchant).toMatchObject({ slug: "test", languages: ["tr", "en"], defaultLanguage: "tr" });
         expect(r.data.theme).toMatchObject({ merchantThemeId: "mt-1", domain: "shop.example.com" });
-        expect(r.data.token.scopes).toEqual(["pages:read", "pages:write"]);
+        /* Sahte backend varsayılanı artık CMS scope'larını da içerir (CMS araçları). */
+        expect(r.data.token.scopes).toEqual(["pages:read", "pages:write", "cms:read", "cms:write"]);
         expect(r.data.pageCount).toBe(1);
         expect(r.data.warnings).toEqual([]);
     });
