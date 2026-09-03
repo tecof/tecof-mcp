@@ -53,7 +53,7 @@ async function setup(options: { backend?: FakeBackendOptions; config?: Partial<T
 }
 
 describe("MCP sunucusu — tools/list ve instructions", () => {
-    it("21 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
+    it("26 tool, annotations ve _meta doğru; instructions sözleşme metniyle başlar", async () => {
         const { client } = await setup();
         expect(client.init.serverInfo.name).toBe("tecof");
         expect(client.init.instructions).toBe(SERVER_INSTRUCTIONS);
@@ -75,12 +75,15 @@ describe("MCP sunucusu — tools/list ve instructions", () => {
                 "import_image",
                 "list_cms_collections", "list_cms_items", "list_components", "list_media", "list_pages",
                 "update_cms_collection", "update_cms_item", "update_page",
-                "validate_document"
-            ]
+                "validate_document",
+                /* Ürün araçları (scope products:read/write) */
+                "delete_product", "get_product", "get_product_import_template", "list_products", "upsert_products"
+            ].sort()
         );
         for (const n of [
             "get_site_context", "list_components", "list_pages", "get_page", "validate_document", "get_preview_url", "list_media",
-            "list_cms_collections", "get_cms_collection", "list_cms_items", "get_cms_item"
+            "list_cms_collections", "get_cms_collection", "list_cms_items", "get_cms_item",
+            "list_products", "get_product", "get_product_import_template"
         ]) {
             expect(byName[n].annotations.readOnlyHint, n).toBe(true);
         }
@@ -102,6 +105,23 @@ describe("MCP sunucusu — tools/list ve instructions", () => {
         /* Şema değişikliği veri kaybettirebildiği için koleksiyon güncelleme de yıkıcı sayılır. */
         expect(byName.update_cms_collection.annotations.destructiveHint).toBe(true);
         expect(byName.create_cms_item.inputSchema.required).toEqual(["collection", "slug"]);
+
+        /* Ürün silme de sayfa/CMS silmesiyle aynı sözleşmede: onay + yıkıcı. */
+        expect(byName.delete_product.annotations.destructiveHint).toBe(true);
+        expect(byName.delete_product._meta["anthropic/requiresUserInteraction"]).toBe(true);
+        expect(byName.delete_product.inputSchema.properties.confirm.const).toBe(true);
+        /* upsert şemasında ÜRÜN KALEMİNİN hiçbir alanı zorunlu değil: `variants`
+           de, varyant içindeki `price`/`sku` de. Sunucu hem varyant başına hem
+           dizinin kendisi için "bu gövdede gerçekten var mıydı" bayrağı taşıyor;
+           gönderilmeyen alana dokunmuyor. Şema bunu daraltırsa kısmi güncelleme
+           (ör. yalnız status) fazladan okuma ya da uydurma varyant gerektirir
+           (bkz. src/tools/_products.ts UpsertProductSchema yorumu). */
+        expect(byName.upsert_products.annotations.readOnlyHint).toBe(false);
+        expect(byName.upsert_products.inputSchema.required).toEqual(["items"]);
+        const itemSchema = byName.upsert_products.inputSchema.properties.items.items;
+        expect(itemSchema.required).toBeUndefined();
+        expect(itemSchema.properties.variants.minItems).toBe(1);   // gönderilirse boş olamaz
+        expect(itemSchema.properties.variants.items.required).toBeUndefined();
     });
 });
 

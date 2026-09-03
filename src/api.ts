@@ -20,6 +20,8 @@ import type {
     PageSummary,
     PageWriteResult,
     PreviewUrlResponse,
+    Product,
+    ProductUpsertReport,
     TecofDocument,
     UploadObject,
 } from "./types.js";
@@ -93,6 +95,9 @@ export function describeInsecureApiUrl(raw: string | null | undefined): string |
     }
 }
 
+/** Hangi kaynağın ucu — ipuçları buna göre değişir. */
+export type ApiDomain = "page" | "cms" | "product";
+
 /** messageCode → insan okunur açıklama + ipucu. Bilinmeyen kodlarda generic metin. */
 function explain(
     status: number,
@@ -100,10 +105,12 @@ function explain(
     serverMessage: string | undefined,
     data: unknown,
     /* İpuçları kaynağa göre değişir: CMS hatasında "list_pages ile doğrulayın"
-       demek ajanı yanlış araca yollar. */
-    isCms = false
+       demek ajanı yanlış araca yollar. Ürün uçlarında da aynısı geçerli. */
+    domain: ApiDomain = "page"
 ): { message: string; hint: string | null } {
     const code = messageCode ?? "";
+    const isCms = domain === "cms";
+    const isProduct = domain === "product";
     switch (status) {
         case 401: {
             const map: Record<string, string> = {
@@ -128,8 +135,21 @@ function explain(
             }
             if (code === "plan-feature-unavailable") {
                 return {
-                    message: "Mağazanın planı API erişimini (apiAccess) kapsamıyor.",
+                    /* Ürün uçlarında kapı İKİ katmanlı: apiAccess (tüm /api/v1)
+                       ve ecommerceEnabled (yalnız ürün yazma). Hangisinin kapalı
+                       olduğunu backend söylemiyor; ikisini de yazıyoruz ki
+                       kullanıcı doğru yerde arasın. */
+                    message: isProduct
+                        ? "Mağazanın paketi API erişimini (apiAccess) ya da e-ticareti (ecommerceEnabled) kapsamıyor."
+                        : "Mağazanın planı API erişimini (apiAccess) kapsamıyor.",
                     hint: "Panelden planı yükseltin ya da mağaza sahibine iletin.",
+                };
+            }
+            if (code === "plan-quota-exceeded") {
+                const max = (data as any)?.max;
+                return {
+                    message: `Paketin ürün limiti dolu${typeof max === "number" ? ` (${max})` : ""}.`,
+                    hint: "Paketi yükseltin ya da kullanılmayan ürünleri silin; mevcut ürünlerin GÜNCELLENMESİ limitten etkilenmez.",
                 };
             }
             return { message: serverMessage ?? "Bu işlem için yetki yok.", hint: null };
@@ -139,7 +159,9 @@ function explain(
                 message: serverMessage ?? "Kayıt bulunamadı.",
                 hint: isCms
                     ? "Koleksiyon/içerik id ya da slug'ını list_cms_collections / list_cms_items ile doğrulayın."
-                    : "Sayfa id/slug'ını list_pages ile doğrulayın.",
+                    : isProduct
+                        ? "Ürün id/slug/SKU'sunu list_products ile doğrulayın (slug adresten, SKU varyanttan gelir)."
+                        : "Sayfa id/slug'ını list_pages ile doğrulayın.",
             };
         case 409:
             return isCms
@@ -159,9 +181,23 @@ function explain(
                    bilerek aralıklı ilerlemeli. */
                 hint: isCms
                     ? "Yazma sınırı dakikada 30: toplu içerik aktarımını parçalara bölün, aralarda bekleyin; yarım kalan kayıtları list_cms_items ile doğrulayıp kaldığınız yerden sürdürün."
-                    : "Kısa bir süre bekleyip tekrar deneyin; toplu değişiklikleri tek update_page çağrısında birleştirin.",
+                    : isProduct
+                        /* Ürün aktarımı en çok bu duvara toplu yüklemede
+                           çarpıyor: 200'lük tek istek 1 yazma sayılır, 200 ayrı
+                           istek 200. Ajanı doğru yöne itiyoruz. */
+                        ? "Yazma sınırı dakikada 30: ürünleri tek tek değil, upsert_products'a tek çağrıda (≤200 kalem) verin; yarım kalan aktarımı list_products ile doğrulayıp sürdürün."
+                        : "Kısa bir süre bekleyip tekrar deneyin; toplu değişiklikleri tek update_page çağrısında birleştirin.",
             };
         case 400: {
+            if (code === "validation-error") {
+                /* Ürün servisinin hata şekli: data.issues = [{path,message}].
+                   Ajan hangi kalemin hangi alanını düzelteceğini görmeli. */
+                const issues = (data as any)?.issues;
+                const detail = Array.isArray(issues)
+                    ? issues.slice(0, 10).map((i: any) => `${i.path ?? "?"}: ${i.message ?? i.code}`).join("; ")
+                    : "";
+                return { message: `Sunucu isteği reddetti${detail ? `: ${detail}` : "."}`, hint: null };
+            }
             if (code === "invalid-document") {
                 const errors = (data as any)?.errors;
                 const detail = Array.isArray(errors)
@@ -183,6 +219,13 @@ function explain(
         default:
             return { message: serverMessage ?? `Sunucu hatası (${status}).`, hint: null };
     }
+}
+
+/** Yol → kaynak alanı. `explain` ipuçlarını buna göre seçer. */
+function domainOf(pathname: string): ApiDomain {
+    if (pathname.startsWith("/cms")) return "cms";
+    if (pathname.startsWith("/products")) return "product";
+    return "page";
 }
 
 /**
@@ -223,7 +266,13 @@ export class TecofApiClient {
         return `${this.baseUrl}/api/v1`;
     }
 
-    private async request<T>(method: string, pathname: string, opts: { query?: Record<string, string | boolean | undefined>; body?: unknown } = {}): Promise<{ data: T; envelope: ApiEnvelope<T> }> {
+    /**
+     * Ham HTTP — zaman aşımı, yönlendirme reddi ve gövde okuması burada.
+     * `request` (JSON zarfı) ve `requestText` (CSV şablonu gibi ham yanıtlar)
+     * bunu paylaşır: iki ayrı kopya olsaydı zaman aşımı düzeltmeleri birinde
+     * unutulurdu.
+     */
+    private async send(method: string, pathname: string, opts: { query?: Record<string, string | boolean | undefined>; body?: unknown; accept?: string } = {}): Promise<{ res: Response; text: string }> {
         const url = new URL(`${this.apiBase}${pathname}`);
         for (const [k, v] of Object.entries(opts.query ?? {})) {
             if (v === undefined || v === null || v === "") continue;
@@ -250,7 +299,7 @@ export class TecofApiClient {
                     method,
                     headers: {
                         Authorization: `Bearer ${this.token}`,
-                        Accept: "application/json",
+                        Accept: opts.accept ?? "application/json",
                         "User-Agent": this.userAgent,
                         ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
                     },
@@ -294,6 +343,12 @@ export class TecofApiClient {
             clearTimeout(timer);
         }
 
+        return { res, text };
+    }
+
+    private async request<T>(method: string, pathname: string, opts: { query?: Record<string, string | boolean | undefined>; body?: unknown } = {}): Promise<{ data: T; envelope: ApiEnvelope<T> }> {
+        const { res, text } = await this.send(method, pathname, opts);
+
         let envelope: ApiEnvelope<T> | null = null;
         if (text) {
             try {
@@ -306,11 +361,28 @@ export class TecofApiClient {
         if (!res.ok || !envelope || envelope.success === false) {
             const status = res.status;
             const code = envelope?.messageCode ?? null;
-            const { message, hint } = explain(status, code, envelope?.message, envelope?.data, pathname.startsWith("/cms"));
+            const { message, hint } = explain(status, code, envelope?.message, envelope?.data, domainOf(pathname));
             throw new ApiError({ status, message, messageCode: code, data: envelope?.data, hint });
         }
 
         return { data: envelope.data as T, envelope };
+    }
+
+    /**
+     * JSON zarfı OLMAYAN uçlar (ürün içe aktarma şablonu `text/csv` döner).
+     * Hata durumunda gövde yine JSON zarfı olabilir — varsa aynı `explain`
+     * yolundan geçirilir ki ajan 403/429 ayrımını kaybetmesin.
+     */
+    private async requestText(method: string, pathname: string, opts: { query?: Record<string, string | boolean | undefined>; accept?: string } = {}): Promise<string> {
+        const { res, text } = await this.send(method, pathname, { ...opts, accept: opts.accept ?? "text/csv, text/plain, application/json" });
+        if (!res.ok) {
+            let envelope: ApiEnvelope<unknown> | null = null;
+            try { envelope = JSON.parse(text) as ApiEnvelope<unknown>; } catch { envelope = null; }
+            const code = envelope?.messageCode ?? null;
+            const { message, hint } = explain(res.status, code, envelope?.message, envelope?.data, domainOf(pathname));
+            throw new ApiError({ status: res.status, message, messageCode: code, data: envelope?.data, hint });
+        }
+        return text;
     }
 
     // ── Uçlar ────────────────────────────────────────────────────────────────
@@ -497,5 +569,68 @@ export class TecofApiClient {
                 { body: { prompt, ...(orientation ? { orientation } : {}) } }
             )
         ).data;
+    }
+
+    /* ─── Ürünler ─────────────────────────────────────────────────────────
+       Uçlar /api/v1/products*; scope products:read / products:write.
+       Sayfa/CMS'ten farkı: ürün TEMAYA bağlı değildir (themeId gönderilmez) ve
+       yazma taslak değildir — `status:"active"` doğrudan vitrine çıkar. */
+
+    async listProducts(params: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        status?: string;
+        category?: string;
+        brand?: string;
+        tag?: string;
+        updatedSince?: string;
+        /** "full" → description + variants; liste varsayılanı hafiftir */
+        fields?: string;
+    } = {}): Promise<{ items: Product[]; total: number }> {
+        const { data, envelope } = await this.request<Product[]>("GET", "/products", {
+            query: {
+                page: params.page ? String(params.page) : undefined,
+                limit: params.limit ? String(params.limit) : undefined,
+                search: params.search || undefined,
+                status: params.status || undefined,
+                category: params.category || undefined,
+                brand: params.brand || undefined,
+                tag: params.tag || undefined,
+                updatedSince: params.updatedSince || undefined,
+                fields: params.fields || undefined,
+            },
+        });
+        const items = Array.isArray(data) ? data : [];
+        return { items, total: envelope.totalData ?? items.length };
+    }
+
+    /** `ref` = 24-hex id, slug ya da varyant SKU'su (backend üçünü de dener). */
+    async getProduct(ref: string): Promise<Product> {
+        return (await this.request<Product>("GET", `/products/${encodeURIComponent(ref)}`)).data;
+    }
+
+    /**
+     * Toplu upsert (≤200 kalem). Anahtar: `slug` → varyant `sku`.
+     * Tek kalem için de bu uç kullanılır: `POST /products` 201/200 ayrımı
+     * yapıyor ama rapor şekli tekilde farklılaşıyor; MCP tarafında TEK bir
+     * rapor biçimi olması ajan için daha okunur.
+     */
+    async upsertProducts(items: unknown[], opts: { dryRun?: boolean } = {}): Promise<ProductUpsertReport> {
+        return (
+            await this.request<ProductUpsertReport>("POST", "/products/bulk", {
+                body: { items, ...(opts.dryRun ? { dryRun: true } : {}) },
+            })
+        ).data;
+    }
+
+    /** Soft delete (deleteCode:1) + `product.deleted` webhook'u. */
+    async deleteProduct(id: string): Promise<{ _id: string }> {
+        return (await this.request<{ _id: string }>("DELETE", `/products/${encodeURIComponent(id)}`)).data;
+    }
+
+    /** İçe aktarma şablonu — HAM CSV (UTF-8 BOM'lu), JSON zarfı YOK. */
+    async productImportTemplate(): Promise<string> {
+        return this.requestText("GET", "/products/import-template");
     }
 }

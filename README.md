@@ -3,7 +3,8 @@
 Tecof Developer API v1 için **stdio MCP sunucusu**. Bir Tecof tema reposunun içinden
 çalışır; tema bileşenlerini diskten (AST) okur, ajanın yazdığı basit "bölüm" tanımlarını
 editör dokümanına çevirir ve Developer API ile **taslak** sayfa oluşturur/günceller.
-Yayınlama her zaman panelden yapılır (API'de publish yok).
+Sayfa yayınlama her zaman panelden yapılır (API'de publish yok). Aynı sunucu headless CMS
+içeriklerini ve e-ticaret kataloğunu (ürün) da yönetir — ürün yazması taslak DEĞİLDİR.
 
 - SDK: `@modelcontextprotocol/server@^2` (+ `zod@^4`) — `McpServer` + `serveStdio`
 - Node ≥ 20, ESM
@@ -14,7 +15,8 @@ Yayınlama her zaman panelden yapılır (API'de publish yok).
 Tema reposunun kökünde:
 
 ```bash
-# 1) Panelden API anahtarı üretin: Ayarlar → Geliştirici / API Anahtarları (scope: pages:read, pages:write)
+# 1) Panelden API anahtarı üretin: Ayarlar → Geliştirici / API Anahtarları
+#    (scope: pages:read, pages:write; CMS için cms:*, ürün araçları için products:read/products:write)
 # 2) .env (gitignore'da) içine yazın
 echo 'TECOF_API_TOKEN=tcf_...' >> .env
 ```
@@ -124,6 +126,11 @@ reposunun kökünde başlatır, sunucu `.env`'i oradan okur.
 | `create_cms_item` | `collection`, `slug`, `data?`, `metaTitle?`, `metaDescription?` | **TASLAK** içerik oluşturur; `data` alan şemasına göre katı doğrulanır |
 | `update_cms_item` | `collection`, `item`, `data?`, `dataMode?`, `slug?`, `allowPublishedEdit?` | `data` varsayılan olarak **birleştirilir** (verilmeyen alan korunur); silmek için `dataMode:"replace"`. İyimser kilit otomatik. Yayındaki içerik `allowPublishedEdit:true` ister |
 | `delete_cms_item` | `collection`, `item`, `confirm: true`, `allowPublishedEdit?` | Soft delete — kullanıcı onayı şart; yayındaki içerik ayrıca onay ister |
+| `list_products` | `search?`, `status?`, `category?`, `brand?`, `tag?`, `updatedSince?`, `page?`, `limit?`, `detail?: summary\|full` | Katalog listesi (ad, durum, marka/kategori/etiket adları, stok, kapak görseli). `full`: varyant sku/fiyat/stok + fiyat aralığı |
+| `get_product` | `product` (id\|slug\|SKU) | Ürünün tamamı: çok dilli alanlar, görseller (CDN URL), varyantlar. Güncellemeden **önce** çağrılır |
+| `upsert_products` | `items` (≤200), `dryRun?` | Oluşturur/günceller; anahtar `slug` → varyant `sku`. Marka/kategori/etiket **adıyla** çözülür, yoksa açılır; görsel URL'i sunucuda indirilir |
+| `delete_product` | `product`, `confirm: true` | Soft delete — kullanıcı onayı şart |
+| `get_product_import_template` | — | Panelin CSV içe aktarma şablonu (sütunlar + örnek satırlar + ham metin) |
 
 Sonuçlar `content[0].text` (JSON) + `structuredContent` olarak döner; hatalar `isError: true`
 ile alan/yol bilgisi taşır (ajan düzeltebilsin diye).
@@ -142,6 +149,37 @@ Veri biçimleri (`data` içinde): çok dilli alanlar `[{code,value}]`; görsel/d
 `list_media` / `import_image` / `generate_image` çıktısındaki **tam dosya objesi dizisi**;
 `reference` alanları hedef içeriğin 24 haneli id'si; `repeater` satır nesnesi dizisi.
 Kesin liste her zaman `get_cms_collection` çıktısındadır.
+
+### Ürün (e-ticaret) akışı
+
+`list_products` → `get_product` → `upsert_products` (önce `dryRun: true`).
+Scope: `products:read` / `products:write` (anahtarı panelden bu yetkilerle üretin).
+`delete_product` silmenin kendisi için yalnız `products:write` ister; ancak ürünü **adres (slug) ya da
+SKU** ile verirseniz araç önce ürünü okuyup id'ye çevirmek zorundadır, o okuma `products:read` gerektirir.
+Yalnız yazma yetkili bir anahtarla çalışıyorsanız ürünün 24 haneli id'sini verin.
+
+Sayfa/CMS araçlarından **iki farkı** vardır ve ikisi de kritiktir:
+
+- **Yazma taslak değildir.** `status: "active"` ürünü anında vitrine çıkarır; `status`
+  hiç gönderilmezse mevcut durum korunur (yeni üründe varsayılan `draft`).
+- **Ürün temaya bağlı değildir** — `themeId` gönderilmez; teması bozuk/eksik bir
+  mağazada da katalog yönetilebilir.
+
+`upsert_products` "yalnız dolu alan yazılır" kuralıyla çalışır ve bu kural **varyant
+içinde de** geçerlidir: göndermediğiniz `price`, `compareAtPrice`, `isActive` alanına
+dokunulmaz; `stock` kısayolu yalnız ilk depo satırını günceller, diğer depoların stoğunu
+silmez. `variants` listesinin KENDİSİ de opsiyoneldir: hiç göndermezseniz mevcut
+varyantlara dokunulmaz (`{slug, status}` ile yalnız durumu değiştirebilirsiniz), gönderirseniz
+boş olamaz. `price` de opsiyoneldir — yeni üründe boşsa `0`, mevcut varyantta boşsa fiyat
+korunur. Eşleşmeyen SKU yeni varyant EKLER, listede olmayan varyant SİLİNMEZ (varyant
+silme panel işidir); bu yüzden bir ürünü baştan kurgularken `get_product` → değerleri
+kopyala → değiştireceğini değiştir → `upsert_products` akışı hâlâ en güvenlisidir.
+
+Diğer notlar: marka/kategori/etiket **adıyla** verilir (yoksa açılır); `images[]` hem
+kütüphane dosyası (`{uploadId}` / `{name}`) hem uzak URL (`{url}`; SSRF korumalı indirilir,
+aynı URL bir kez) kabul eder; varyant ekseni `options: {"Beden":"S"}` biçimindedir.
+Fiyat ve stok kuralları sunucudadır. Alan tablosu, dosyayla (CSV/XLSX/JSON) içe aktarma ve
+sınırlar: backend `docs/PRODUCT_IMPORT_EXPORT.md`.
 
 ### `update_page` operation'ları
 

@@ -29,6 +29,11 @@ const EXPECTED_TOOLS = [
     "list_media",
     "import_image",
     "generate_image",
+    "list_products",
+    "get_product",
+    "upsert_products",
+    "delete_product",
+    "get_product_import_template",
 ];
 
 const child = spawn(process.execPath, [bin], {
@@ -115,7 +120,7 @@ try {
     });
     if (!init?.serverInfo?.name) fail("initialize yanıtı serverInfo içermiyor: " + JSON.stringify(init));
     console.log(`initialize ✓  server=${init.serverInfo.name}@${init.serverInfo.version} protocol=${init.protocolVersion}`);
-    if (!init.instructions || !init.instructions.startsWith("Tecof sayfa araçları")) fail("instructions beklenen metinle başlamıyor");
+    if (!init.instructions || !init.instructions.startsWith("Tecof sayfa")) fail("instructions beklenen metinle başlamıyor");
     console.log(`instructions ✓ (${init.instructions.length} karakter)`);
 
     notify("notifications/initialized", {});

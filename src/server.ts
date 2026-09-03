@@ -28,6 +28,11 @@ import { registerListComponents } from "./tools/list_components.js";
 import { registerListPages } from "./tools/list_pages.js";
 import { registerUpdatePage } from "./tools/update_page.js";
 import { registerValidateDocument } from "./tools/validate_document.js";
+import { registerListProducts } from "./tools/list_products.js";
+import { registerGetProduct } from "./tools/get_product.js";
+import { registerUpsertProducts } from "./tools/upsert_products.js";
+import { registerDeleteProduct } from "./tools/delete_product.js";
+import { registerGetProductImportTemplate } from "./tools/get_product_import_template.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { name: string; version: string };
@@ -43,12 +48,16 @@ export const SERVER_INSTRUCTIONS =
     /* Sözleşme §3.4 — ilk 512 karakter kritik (Codex yalnız o kadarını gösterir).
        Bütçe test'te ölçülür (test/server.test.ts): akış ve yasaklar ilk cümlelerde,
        ayrıntı araç açıklamalarında durur — burada tekrarlanmaz. */
-    "Tecof sayfa + CMS araçları. Tüm yazmalar TASLAK'tır; yayınlamayı kullanıcı panelden yapar. " +
+    /* Ürün satırı bilinçli olarak "ANINDA CANLI" diyor: sayfa/CMS'te her yazma
+       taslaktı, üründe DEĞİL. Bu ayrım ilk 512 karaktere sığmazsa ajan ürünü de
+       taslak sanıp canlı kataloğu değiştirir. */
+    "Tecof sayfa/CMS/ürün araçları. Sayfa+CMS yazması TASLAK'tır, yayını kullanıcı yapar. " +
     "Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. " +
-    "CMS: list_cms_collections → get_cms_collection (alan biçimleri) → create_cms_item. " +
-    "Ortak bileşenlere (Header/Footer) dokunma; id üretme; çok dilli alanları tüm dillerde doldur. " +
-    "Görsel: list_media / import_image / generate_image çıktısındaki uploadValue'yu kullan. " +
-    "Silme ve canlı içerik değişikliği kullanıcı onayı ister.";
+    "CMS: list_cms_collections → get_cms_collection → create_cms_item. " +
+    "Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. " +
+    "Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. " +
+    "Görsel: list_media/import_image/generate_image → uploadValue. " +
+    "Silme ve canlı değişiklik kullanıcı onayı ister.";
 
 export type BuildServerOptions = {
     ctx: ServerContext;
@@ -84,6 +93,15 @@ export function buildServer({ ctx }: BuildServerOptions): McpServer {
     registerListMedia(server, ctx);
     registerImportImage(server, ctx);
     registerGenerateImage(server, ctx);
+
+    /* E-ticaret kataloğu — scope products:read / products:write.
+       Sayfa/CMS'ten iki farkı var: temaya bağlı DEĞİL (themeId gönderilmez) ve
+       yazma taslak değil (status:"active" doğrudan vitrine çıkar). */
+    registerListProducts(server, ctx);
+    registerGetProduct(server, ctx);
+    registerUpsertProducts(server, ctx);
+    registerDeleteProduct(server, ctx);
+    registerGetProductImportTemplate(server, ctx);
 
     return server;
 }

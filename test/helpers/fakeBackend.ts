@@ -22,6 +22,31 @@ export type FakePage = {
     publishedDate?: string | null;
 };
 
+/** v1 `serializeProduct` çıktısının test karşılığı (varyantlar hep saklanır). */
+export type FakeProduct = {
+    _id: string;
+    slug: string;
+    name: Array<{ code: string; value: string }>;
+    status: "active" | "inactive" | "draft";
+    type: "simple" | "variable" | "grouped" | "digital";
+    brand: { _id: string; name: string; slug: string } | null;
+    categories: Array<{ _id: string; name: string; slug: string }>;
+    tags: Array<{ _id: string; name: string; slug: string }>;
+    images: Array<{ uploadId: string | null; name: string | null; folder: string | null; url: string | null; order: number; variantId: string | null }>;
+    description: Array<{ code: string; value: string }>;
+    totalStock: number;
+    avgRating: number;
+    reviewCount: number;
+    variants: Array<{
+        _id: string; sku: string; barcode: string | null; price: number; compareAtPrice: number | null;
+        weight: number | null; isActive: boolean; stock: number;
+        stocks: Array<{ stockLocationId: string; quantity: number }>;
+        variantValues: Array<{ variantTypeId: string; variantValueId: string | null }>;
+    }>;
+    modifiedDate: string;
+    createDate: string;
+};
+
 export type FakeBackendOptions = {
     token?: string;
     themeId?: string;
@@ -32,6 +57,8 @@ export type FakeBackendOptions = {
     /** CMS koleksiyonları (içerik tipleri) ve içerikleri */
     cmsCollections?: Array<{ _id?: string; slug: string; name?: any; displayField?: string; fields?: any[] }>;
     cmsItems?: Array<{ _id?: string; collectionSlug: string; slug: string; data?: any; status?: string; modifiedDate?: string }>;
+    /** E-ticaret kataloğu (v1 /products uçları) */
+    products?: Array<Partial<FakeProduct> & { slug: string }>;
     /** Her istekte çağrılır — 429 vb. simülasyonu için {status, body} dönebilir */
     intercept?: (req: { method: string; url: URL; body: any }) => { status: number; body: any } | null | undefined;
     /** POST/PUT yanıtlarının zarf KÖKÜNE konacak sunucu uyarıları (gerçek backend biçimi: DocIssue[]) */
@@ -89,6 +116,25 @@ export function createFakeBackend(opts: FakeBackendOptions = {}) {
             createDate: "2026-08-19T08:00:00.000Z",
         };
     });
+
+    const products: FakeProduct[] = (opts.products ?? []).map((p) => ({
+        _id: p._id ?? newId(),
+        slug: p.slug,
+        name: p.name ?? [{ code: defaultLanguage, value: p.slug }],
+        status: p.status ?? "draft",
+        type: p.type ?? "simple",
+        brand: p.brand ?? null,
+        categories: p.categories ?? [],
+        tags: p.tags ?? [],
+        images: p.images ?? [],
+        description: p.description ?? [],
+        totalStock: p.totalStock ?? 0,
+        avgRating: p.avgRating ?? 0,
+        reviewCount: p.reviewCount ?? 0,
+        variants: p.variants ?? [],
+        modifiedDate: p.modifiedDate ?? "2026-08-19T09:00:00.000Z",
+        createDate: p.createDate ?? "2026-08-19T08:00:00.000Z",
+    }));
 
     const calls: Array<{ method: string; url: string; headers: Record<string, string>; body: any }> = [];
 
@@ -359,8 +405,147 @@ export function createFakeBackend(opts: FakeBackendOptions = {}) {
             }
         }
 
+        /* ── Ürünler ────────────────────────────────────────────────────────
+           routes/api/v1/products.ts + src/productService.ts davranışını taklit
+           eder: liste hafif (variants/description yalnız fields=full), tek ürün
+           id|slug|SKU ile bulunur, toplu upsert anahtarı slug → varyant SKU,
+           şablon ucu JSON ZARFI DEĞİL ham CSV döndürür. */
+
+        /* Şablon /products/:idOrSlug'tan ÖNCE eşleşmeli — gerçek router'da da
+           sıra böyle (yoksa "import-template" bir slug sanılır). */
+        if (path === "/products/import-template" && method === "GET") {
+            const denied = requireScope("products:read");
+            if (denied) return denied;
+            /* BOM + tırnaklı virgüllü alan: aracın CSV çözümleyicisi sınanır. */
+            const csv = "﻿Adres,Ürün adı,Stok kodu,Fiyat,Kısa açıklama\n"
+                + 'pamuklu-tisort,Pamuklu Tişört,TS-001,349.90,"%100 pamuk, nefes alan kumaş"\n'
+                + "seramik-kupa,Seramik Kupa,KP-001,129.00,El yapımı kupa\n";
+            return new Response(csv, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8" } });
+        }
+
+        const productView = (p: FakeProduct, full: boolean) => {
+            const { variants, description, ...rest } = p;
+            return {
+                ...rest,
+                variantCount: variants.length,
+                ...(full
+                    ? { description, variants, weight: 0, maxQuantityPerCart: null, attributes: [], personalizationFields: [] }
+                    : {}),
+            };
+        };
+        const findProduct = (ref: string) =>
+            products.find((p) => (/^[0-9a-f]{24}$/i.test(ref) && p._id === ref) || p.slug === ref || p.variants.some((v) => v.sku === ref));
+
+        if (path === "/products" && method === "GET") {
+            const denied = requireScope("products:read");
+            if (denied) return denied;
+            const full = url.searchParams.get("fields") === "full";
+            const status = url.searchParams.get("status");
+            const search = (url.searchParams.get("search") ?? "").toLowerCase();
+            const list = products.filter((p) => {
+                if (status && p.status !== status) return false;
+                if (!search) return true;
+                return p.slug.toLowerCase().includes(search)
+                    || p.name.some((n) => n.value.toLowerCase().includes(search))
+                    || p.variants.some((v) => v.sku.toLowerCase().includes(search));
+            });
+            return ok(list.map((p) => productView(p, full)), { totalData: list.length });
+        }
+
+        if (path === "/products/bulk" && method === "POST") {
+            const denied = requireScope("products:write");
+            if (denied) return denied;
+            const items = Array.isArray(body?.items) ? body.items : [];
+            if (!items.length) return fail(400, "validation-error", "Geçersiz", { issues: [{ path: "items", message: "En az bir ürün gerekli" }] });
+            if (items.length > 200) return fail(400, "validation-error", "Geçersiz", { issues: [{ path: "items", message: "En fazla 200 ürün" }] });
+            const dryRun = body?.dryRun === true;
+            const report: any = { dryRun, created: 0, updated: 0, skipped: 0, issueCount: 0, issues: [], items: [] };
+            items.forEach((item: any, index: number) => {
+                const slug = String(item?.slug ?? "").trim()
+                    || String(item?.name ?? "").toLowerCase().replace(/\s+/g, "-");
+                if (!slug) {
+                    report.skipped++;
+                    report.items.push({ index, slug: null, productId: null, outcome: "skipped" });
+                    report.issues.push({ index, level: "error", path: "slug", message: "slug ya da name zorunlu" });
+                    return;
+                }
+                const skus: string[] = (item?.variants ?? []).map((v: any) => v?.sku).filter(Boolean);
+                const existing = products.find((p) => p.slug === slug || p.variants.some((v) => skus.includes(v.sku)));
+                if (existing) {
+                    if (!dryRun) {
+                        if (item.status) existing.status = item.status;
+                        for (const v of item.variants ?? []) {
+                            const match = existing.variants.find((x) => x.sku === v.sku);
+                            if (match) {
+                                if (typeof v.price === "number") match.price = v.price;
+                                if (typeof v.stock === "number") match.stock = v.stock;
+                            } else {
+                                existing.variants.push({
+                                    _id: newId(), sku: String(v.sku ?? slug.toUpperCase()), barcode: v.barcode ?? null,
+                                    price: Number(v.price) || 0, compareAtPrice: v.compareAtPrice ?? null, weight: v.weight ?? null,
+                                    isActive: true, stock: Number(v.stock) || 0, stocks: [], variantValues: [],
+                                });
+                            }
+                        }
+                        existing.modifiedDate = now();
+                    }
+                    report.updated++;
+                    report.items.push({ index, slug: existing.slug, productId: existing._id, outcome: "updated" });
+                    return;
+                }
+                if (dryRun) {
+                    report.created++;
+                    report.items.push({ index, slug, productId: null, outcome: "created" });
+                    return;
+                }
+                const created: FakeProduct = {
+                    _id: newId(), slug,
+                    name: typeof item?.name === "string" ? [{ code: defaultLanguage, value: item.name }] : (item?.name ?? []),
+                    status: item?.status ?? "draft",
+                    type: item?.type ?? ((item?.variants ?? []).length > 1 ? "variable" : "simple"),
+                    brand: item?.brand ? { _id: newId(), name: String(item.brand), slug: String(item.brand).toLowerCase() } : null,
+                    categories: (item?.categories ?? []).map((c: string) => ({ _id: newId(), name: c, slug: String(c).toLowerCase() })),
+                    tags: (item?.tags ?? []).map((t: string) => ({ _id: newId(), name: t, slug: String(t).toLowerCase() })),
+                    images: [], description: [], totalStock: 0, avgRating: 0, reviewCount: 0,
+                    variants: (item?.variants ?? []).map((v: any) => ({
+                        _id: newId(), sku: String(v?.sku ?? slug.toUpperCase()), barcode: v?.barcode ?? null,
+                        price: Number(v?.price) || 0, compareAtPrice: v?.compareAtPrice ?? null, weight: v?.weight ?? null,
+                        isActive: true, stock: Number(v?.stock) || 0, stocks: [], variantValues: [],
+                    })),
+                    modifiedDate: now(), createDate: now(),
+                };
+                created.totalStock = created.variants.reduce((s, v) => s + v.stock, 0);
+                products.push(created);
+                report.created++;
+                report.items.push({ index, slug, productId: created._id, outcome: "created" });
+            });
+            report.issueCount = report.issues.length;
+            return ok(report);
+        }
+
+        const productMatch = path.match(/^\/products\/([^/]+)$/);
+        if (productMatch) {
+            const ref = decodeURIComponent(productMatch[1]);
+            if (method === "GET") {
+                const denied = requireScope("products:read");
+                if (denied) return denied;
+                const found = findProduct(ref);
+                if (!found) return fail(404, "not-found", "Ürün bulunamadı");
+                return ok(productView(found, true));
+            }
+            if (method === "DELETE") {
+                const denied = requireScope("products:write");
+                if (denied) return denied;
+                /* Gerçek uç YALNIZ id kabul eder (slug/SKU ile silinmez). */
+                const found = /^[0-9a-f]{24}$/i.test(ref) ? products.find((p) => p._id === ref) : null;
+                if (!found) return fail(404, "not-found", "Ürün bulunamadı");
+                products.splice(products.indexOf(found), 1);
+                return ok({ _id: found._id });
+            }
+        }
+
         return fail(404, "not-found", `Bilinmeyen uç: ${method} ${path}`);
     };
 
-    return { fetch: fetchImpl, calls, pages, cmsCollections, cmsItems, token, themeId };
+    return { fetch: fetchImpl, calls, pages, cmsCollections, cmsItems, products, token, themeId };
 }

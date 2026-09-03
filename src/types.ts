@@ -279,6 +279,98 @@ export type PreviewUrlResponse = {
     localUrlTemplate: string;
 };
 
+/* ─── Ürünler (e-ticaret kataloğu) ─────────────────────────────────────────
+   `/api/v1/products` çıktısının aynadaki karşılığı (backend
+   app/src/productService.ts `serializeProduct`). Sayfa/CMS'ten farkı: ürün
+   yazmaları TASLAK DEĞİLDİR — `status:"active"` doğrudan vitrine çıkar. */
+
+export type ProductStatus = "active" | "inactive" | "draft";
+export type ProductType = "simple" | "variable" | "grouped" | "digital";
+
+/** Marka / kategori / etiket bağı — backend id ile birlikte ADI da döndürür. */
+export type ProductRef = { _id: string; name: string | null; slug: string };
+
+/** Ürün görseli. `folder` DÜŞÜRÜLMEZ: scope'lu klasördeki dosyanın URL'i onsuz 404 verir. */
+export type ProductImage = {
+    _id?: string;
+    uploadId: string | null;
+    name: string | null;
+    folder: string | null;
+    url: string | null;
+    order: number;
+    variantId: string | null;
+};
+
+export type ProductVariant = {
+    _id: string;
+    sku: string;
+    barcode: string | null;
+    price: number;
+    compareAtPrice: number | null;
+    currencyCode?: string | null;
+    weight: number | null;
+    isActive: boolean;
+    /** `stocks[]` toplamı (vitrin sepeti stocks[]'ten okur, bu alandan değil) */
+    stock: number;
+    stocks: Array<{ stockLocationId: string; quantity: number }>;
+    variantValues: Array<{ variantTypeId: string; variantValueId: string | null }>;
+};
+
+export type Product = {
+    _id: string;
+    slug: string;
+    name: LangValue[];
+    status: ProductStatus;
+    type: ProductType;
+    brand: ProductRef | null;
+    categories: ProductRef[];
+    tags: ProductRef[];
+    images: ProductImage[];
+    totalStock: number;
+    avgRating: number;
+    reviewCount: number;
+    variantCount: number;
+    modifiedDate: string;
+    createDate: string;
+    shortDescription?: LangValue[];
+    metaTitle?: LangValue[];
+    metaDescription?: LangValue[];
+    /** Aşağıdakiler yalnız tek ürün ucunda ve `fields=full` listesinde döner */
+    description?: LangValue[];
+    weight?: number;
+    maxQuantityPerCart?: number | null;
+    attributes?: unknown[];
+    personalizationFields?: unknown[];
+    variants?: ProductVariant[];
+};
+
+/** Toplu upsert raporundaki tek satır (hata da uyarı da aynı listede). */
+export type ProductUpsertIssue = {
+    index?: number;
+    level?: "error" | "warning";
+    code?: string;
+    path?: string;
+    slug?: string | null;
+    message: string;
+    max?: number;
+};
+
+/** `POST /api/v1/products/bulk` raporu — içe aktarma raporuyla aynı şekil. */
+export type ProductUpsertReport = {
+    dryRun: boolean;
+    created: number;
+    updated: number;
+    skipped: number;
+    issueCount: number;
+    issues: ProductUpsertIssue[];
+    items: Array<{
+        index: number;
+        slug: string | null;
+        productId: string | null;
+        outcome: "created" | "updated" | "skipped";
+    }>;
+};
+
 /** Tecof standart yanıt zarfı. `warnings` yazma uçlarında kökte gelir. */
 export type ApiEnvelope<T> = {
     success: boolean;
