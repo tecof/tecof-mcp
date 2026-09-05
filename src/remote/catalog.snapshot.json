@@ -1,0 +1,4457 @@
+{
+  "instructions": "Tecof sayfa/CMS/ürün araçları. Sayfa+CMS yazması TASLAK'tır, yayını kullanıcı yapar. Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. CMS: list_cms_collections → get_cms_collection → create_cms_item. Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. Görsel: list_media/import_image/generate_image → uploadValue. Silme/kredi/canlı işlemler onay ister (confirm:true).",
+  "version": "1.0.0",
+  "surface": "mcp",
+  "generatedAt": "2026-09-05T10:00:57.145Z",
+  "tools": [
+    {
+      "name": "get_site_context",
+      "module": "site",
+      "title": "Site bağlamını getir",
+      "description": "Mağaza (diller, varsayılan dil), aktif tema (themeId/merchantThemeId/domain), API anahtarının kapsamı ve bitişi, sayfa sayısı. Diğer araçlardan önce çağırın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_pages",
+      "module": "pages",
+      "title": "Sayfaları listele",
+      "description": "Aktif temadaki sayfaları listeler (id, slug, başlık, durum: draft/published/changed, tarihler).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "includeTemplates": {
+            "description": "Şablon sayfaları da dahil et (salt-okunur)",
+            "type": "boolean"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_page",
+      "module": "pages",
+      "title": "Sayfayı getir",
+      "description": "Bir sayfanın taslağını döner. mode=outline (varsayılan): bölümler ve slot çocukları id/type/kısa metinle — update_page için id'leri buradan alın. mode=full: tam draftData JSON.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sayfa id'si (24 hex) ya da slug'ı (örn. 'home', 'hakkimizda')"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "outline",
+              "full"
+            ]
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "includePublished": {
+            "description": "full modda yayındaki dokümanı da (publishedData) ekle",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "create_page",
+      "module": "pages",
+      "title": "Sayfa oluştur (taslak)",
+      "description": "Yazarlık biçimindeki bölümlerden yeni bir TASLAK sayfa oluşturur. Header/Footer, layoutFrom sayfasındaki ortak bileşenlerden otomatik kopyalanır (varsayılan: home) — bunları sections içinde vermeyin. Önce list_components (full) ile alanları doğrulayın; dryRun:true ile kaydetmeden deneyin. `sections` yerine hazır `document` (tam doküman) da verilebilir; ikisi birlikte verilemez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "description": "URL slug'ı, örn. 'hakkimizda' (sunucu normalize eder). Varsayılan dilin adresidir."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Panelde görünen sayfa adı"
+          },
+          "slugs": {
+            "description": "Dile göre adres: {tr:\"hakkimizda\", en:\"about\"}. Verilmezse `slug` tüm açık dillere kopyalanır; eksik bırakılan dil de `slug`'a düşer.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ]
+          },
+          "titles": {
+            "description": "Dile göre sayfa adı: {tr:\"Hakkımızda\", en:\"About\"}. Verilmezse `title` tüm dillerde kullanılır.",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ]
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "metaTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              },
+              "metaDescription": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              }
+            }
+          },
+          "sections": {
+            "description": "Sayfa bölümleri (Header/Footer HARİÇ), sırayla. `document` verilmemişse zorunlu.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "document": {
+            "description": "Önceden inşa edilmiş tam doküman (Header/Footer dahil). `sections` ile birlikte verilemez; layoutFrom uygulanmaz.",
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "object",
+                "properties": {
+                  "props": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "props"
+                ]
+              },
+              "content": {
+                "type": "array",
+                "items": {}
+              },
+              "zones": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "required": [
+              "content"
+            ]
+          },
+          "layoutFrom": {
+            "description": "Header/Footer kaynağı: \"home\" (varsayılan), başka bir slug, ya da \"none\"",
+            "type": "string"
+          },
+          "dryRun": {
+            "description": "true: kaydetme, yalnız doğrula + outline döndür",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slug",
+          "title"
+        ],
+        "$defs": {
+          "__schema0": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
+              },
+              "props": {
+                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "variant": {
+                "description": "Bileşenin variants anahtarlarından biri (varsa).",
+                "type": "string"
+              },
+              "slots": {
+                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "update_page",
+      "module": "pages",
+      "title": "Sayfayı güncelle (taslak)",
+      "description": "Sayfa taslağını günceller. Dile göre adres/ad için meta.slugs / meta.titles kullanın (kısmi gönderim eski dilleri korur). Ya `operations` (append/insert/replace/remove/move_section, set_props, set_slot, set_root_props — id'ler get_page outline'dan; append_section ve anchor'sız insert_section yeni bölümü Footer'ın ÖNÜNE koyar) ya da `document` (tam doküman) verin; `meta` ile başlık/slug/meta alanları (yalnız meta verilirse draftData'ya dokunulmaz). Ortak bileşenler (Header/Footer) ve onların ALT düğümleri değiştirilemez. dryRun:true kaydetmez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sayfa id'si (24 hex) ya da slug'ı (örn. 'home', 'hakkimizda')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "append_section"
+                    },
+                    "section": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "section"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "insert_section"
+                    },
+                    "section": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "before": {
+                      "description": "Bu kök bölüm id'sinin önüne",
+                      "type": "string"
+                    },
+                    "after": {
+                      "description": "Bu kök bölüm id'sinin arkasına",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "section"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "replace_section"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "section": {
+                      "$ref": "#/$defs/__schema0"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "section"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "remove_section"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "move_section"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "before": {
+                      "type": "string"
+                    },
+                    "after": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "set_props"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "props": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {},
+                      "description": "Sığ birleştirme; dil/link kısayolları geçerli. Slot içeriği için set_slot kullanın."
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "props"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "set_slot"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "slot": {
+                      "type": "string"
+                    },
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "description": "Slotun YENİ içeriği (tamamen değiştirir)"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id",
+                    "slot",
+                    "children"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "set_root_props"
+                    },
+                    "props": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "props"
+                  ]
+                }
+              ]
+            }
+          },
+          "document": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "object",
+                "properties": {
+                  "props": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "props"
+                ]
+              },
+              "content": {
+                "type": "array",
+                "items": {}
+              },
+              "zones": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "required": [
+              "content"
+            ],
+            "description": "Tam editör dokümanı {root, content, zones}"
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "slugs": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              },
+              "titles": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              },
+              "metaTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              },
+              "metaDescription": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  }
+                ],
+                "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+              }
+            }
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "expectedModifiedDate": {
+            "description": "İyimser kilit: get_page'den gelen modifiedDate. Verilmezse az önce okunan değer kullanılır.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page"
+        ],
+        "$defs": {
+          "__schema0": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
+              },
+              "props": {
+                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "variant": {
+                "description": "Bileşenin variants anahtarlarından biri (varsa).",
+                "type": "string"
+              },
+              "slots": {
+                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "delete_page",
+      "module": "pages",
+      "title": "Sayfayı sil",
+      "description": "Sayfayı siler (soft delete; panelden geri alınabilir). Kullanıcı onayı olmadan ÇAĞIRMAYIN — confirm:true kullanıcının açık onayını temsil eder. Şablon sayfalar silinemez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sayfa id'si (24 hex) ya da slug'ı (örn. 'home', 'hakkimizda')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Kullanıcı silmeyi açıkça onayladı — gönderilmezse özet + confirmId ile onay istenir",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "validate_document",
+      "module": "pages",
+      "title": "Dokümanı doğrula",
+      "description": "Kaydetmeden doğrular. Ya `sections` (yazarlık biçimi: type/props/variant/slots) ya da `document` (tam {root,content,zones}) verin. Hatalar yol + açıklama ile döner; ok=true ise normalizedDocument kaydedilebilir haldedir.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "document": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "object",
+                "properties": {
+                  "props": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "props"
+                ]
+              },
+              "content": {
+                "type": "array",
+                "items": {}
+              },
+              "zones": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            },
+            "required": [
+              "content"
+            ],
+            "description": "Tam editör dokümanı {root, content, zones}"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        },
+        "$defs": {
+          "__schema0": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
+              },
+              "props": {
+                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "variant": {
+                "description": "Bileşenin variants anahtarlarından biri (varsa).",
+                "type": "string"
+              },
+              "slots": {
+                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                }
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_preview_url",
+      "module": "pages",
+      "title": "Önizleme URL'si al",
+      "description": "Sayfanın TASLAK hâli için 1 saat geçerli önizleme bağlantıları: yayındaki domain (storefront) ve yerel geliştirme (localhost:3000 şablonu). Yayınlama panelden yapılır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sayfa id'si (24 hex) ya da slug'ı (örn. 'home', 'hakkimizda')"
+          },
+          "locale": {
+            "description": "Dil kodu (varsayılan: mağazanın varsayılan dili)",
+            "type": "string"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_components",
+      "module": "pages",
+      "title": "Tema bileşenlerini listele",
+      "description": "Temanın section ve element bileşenlerini (canlı tema domain'i ya da git deposundan) okur. summary: ad, label, kategori, slot adları. full: alanlar (tip, seçenekler, slot allow listesi), defaultProps, variants. Bölüm yazmadan önce full ile alan adlarını doğrulayın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "category": {
+            "description": "Yalnız bu kategori",
+            "type": "string",
+            "enum": [
+              "section",
+              "element"
+            ]
+          },
+          "component": {
+            "description": "Tek bileşen adı (büyük/küçük harf duyarsız)",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Varsayılan: summary (component verilmişse full)",
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ]
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_cms_collections",
+      "module": "cms",
+      "title": "İçerik tiplerini listele",
+      "description": "Headless CMS koleksiyonlarını (içerik tipleri) listeler: id, slug, ad, alan sayısı, içerik sayısı. İçerik yazmadan önce get_cms_collection ile alan şemasını alın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_cms_collection",
+      "module": "cms",
+      "title": "İçerik tipinin alan şemasını getir",
+      "description": "Koleksiyonun tüm alanlarını ve HER ALAN İÇİN BEKLENEN VERİ BİÇİMİNİ döner (çok dilli alan [{code,value}], görsel alanı tam dosya objesi dizisi, referans 24-hex id…). İçerik oluşturmadan/güncellemeden önce çağırın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "create_cms_collection",
+      "module": "cms",
+      "title": "İçerik tipi oluştur",
+      "description": "Yeni bir CMS koleksiyonu (içerik tipi) açar. fields[] alan şemasıdır; tipler: text, plain-text, rich-text, image, multi-image, video-link, link, email, phone, number, date-time, switch, color, option, file, reference, multi-reference, repeater. displayField, listede etiket olarak kullanılacak alanın shortcode'udur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "description": "URL/anahtar slug'ı — sunucu normalize eder (ör. 'blog')"
+          },
+          "name": {
+            "description": "Panelde görünen ad",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "icon": {
+            "description": "lucide ikon adı (varsayılan: file-text)",
+            "type": "string"
+          },
+          "displayField": {
+            "description": "Liste etiketi olacak alanın shortcode'u",
+            "type": "string"
+          },
+          "fields": {
+            "description": "Alan şeması",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shortcode": {
+                  "type": "string",
+                  "description": "küçük harf + [a-z0-9_] (ör. baslik)"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "alan tipi — repeater HARİÇ (iç içe repeater yok)"
+                },
+                "label": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "isMultilingual": {
+                  "type": "boolean"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "value"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ]
+                  }
+                },
+                "referenceCollectionId": {
+                  "type": "string"
+                },
+                "subFields": {
+                  "description": "yalnız type:'repeater' için",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shortcode": {
+                        "type": "string",
+                        "description": "küçük harf + [a-z0-9_] (ör. baslik)"
+                      },
+                      "type": {
+                        "type": "string",
+                        "description": "alan tipi — repeater HARİÇ (iç içe repeater yok)"
+                      },
+                      "label": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "value"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "isMultilingual": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "value"
+                                    ]
+                                  }
+                                }
+                              ],
+                              "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                            }
+                          },
+                          "required": [
+                            "value"
+                          ]
+                        }
+                      },
+                      "referenceCollectionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "shortcode",
+                      "type"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "shortcode",
+                "type"
+              ]
+            }
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "update_cms_collection",
+      "module": "cms",
+      "title": "İçerik tipini güncelle",
+      "description": "Koleksiyonun adını/slug'ını/ikonunu/displayField'ini ve ALAN ŞEMASINI günceller. fields verilirse şema tamamen değişir (merge yok) — önce get_cms_collection ile okuyun. Veri taşıyan alanı silmek/tipini değiştirmek allowFieldLoss:true ister; bunu yalnız kullanıcı onayladıysa gönderin.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Güncellenecek koleksiyonun id'si (slug da kabul edilir)"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "displayField": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shortcode": {
+                  "type": "string",
+                  "description": "küçük harf + [a-z0-9_] (ör. baslik)"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "alan tipi — repeater HARİÇ (iç içe repeater yok)"
+                },
+                "label": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "isMultilingual": {
+                  "type": "boolean"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "value"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ]
+                  }
+                },
+                "referenceCollectionId": {
+                  "type": "string"
+                },
+                "subFields": {
+                  "description": "yalnız type:'repeater' için",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "shortcode": {
+                        "type": "string",
+                        "description": "küçük harf + [a-z0-9_] (ör. baslik)"
+                      },
+                      "type": {
+                        "type": "string",
+                        "description": "alan tipi — repeater HARİÇ (iç içe repeater yok)"
+                      },
+                      "label": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "code": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "code",
+                                "value"
+                              ]
+                            }
+                          }
+                        ],
+                        "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "isMultilingual": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "value"
+                                    ]
+                                  }
+                                }
+                              ],
+                              "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+                            }
+                          },
+                          "required": [
+                            "value"
+                          ]
+                        }
+                      },
+                      "referenceCollectionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "shortcode",
+                      "type"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "shortcode",
+                "type"
+              ]
+            }
+          },
+          "allowFieldLoss": {
+            "description": "Kullanıcı, veri kaybını açıkça onayladı",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "collection"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_cms_items",
+      "module": "cms",
+      "title": "İçerikleri listele",
+      "description": "Bir CMS koleksiyonundaki içerikleri listeler (id, slug, durum, tarihler). Durum: draft | scheduled | published. Kaydın alan verisi için get_cms_item kullanın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "search": {
+            "description": "slug içinde arama",
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "description": "varsayılan 50, en fazla 200",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "collection"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_cms_item",
+      "module": "cms",
+      "title": "İçeriği getir",
+      "description": "Bir CMS içeriğinin tamamını döner (data, meta, durum, modifiedDate). update_cms_item data'yı tamamen değiştirdiği için önce bunu çağırın; modifiedDate'i expectedModifiedDate olarak geri gönderirseniz eşzamanlı düzenleme 409 ile korunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "description": "İçerik id'si (24 hex) ya da slug'ı"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "item"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "create_cms_item",
+      "module": "cms",
+      "title": "İçerik oluştur (taslak)",
+      "description": "CMS koleksiyonuna TASLAK içerik ekler; yayınlamayı kullanıcı panelden yapar. data anahtarları alanların shortcode'udur — beklenen biçimler için önce get_cms_collection çağırın (çok dilli alan [{code,value}], görsel alanı uploadValue dizisi, referans 24-hex id).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "description": "İçerik adresi — sunucu normalize eder (ör. 'ilk-yazi')"
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Alan shortcode'u → değer. Beklenen biçimler için önce get_cms_collection çağırın."
+          },
+          "metaTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "metaDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "status": {
+            "description": "KULLANILMAZ — Developer API içerik yayınlamaz; verilirse hata döner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "slug"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "update_cms_item",
+      "module": "cms",
+      "title": "İçeriği güncelle",
+      "description": "CMS içeriğini günceller. data VARSAYILAN OLARAK BİRLEŞTİRİLİR (verdiğiniz alanlar güncellenir, diğerleri korunur); alan silmek için dataMode:\"replace\". Yayındaki içeriği değiştirmek allowPublishedEdit:true ister (değişiklik anında canlıya çıkar); bunu yalnız kullanıcı onayladıysa gönderin. expectedModifiedDate ile eşzamanlı düzenleme çakışması 409 olarak yakalanır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "description": "İçerik id'si (24 hex) ya da slug'ı"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "slug": {
+            "description": "Yeni adres — yayındaki içerikte eski adres 404 verir",
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Alan shortcode'u → değer. Beklenen biçimler için önce get_cms_collection çağırın."
+          },
+          "dataMode": {
+            "description": "Varsayılan \"merge\": verdiğiniz alanlar güncellenir, diğerleri KORUNUR. \"replace\": data tamamen değişir, göndermediğiniz alanlar SİLİNİR.",
+            "type": "string",
+            "enum": [
+              "merge",
+              "replace"
+            ]
+          },
+          "metaTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "metaDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "value"
+                  ]
+                }
+              }
+            ],
+            "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]"
+          },
+          "allowPublishedEdit": {
+            "description": "Kullanıcı, canlı içeriğin değişmesini onayladı",
+            "type": "boolean"
+          },
+          "expectedModifiedDate": {
+            "description": "get_cms_item'dan gelen modifiedDate",
+            "type": "string"
+          },
+          "status": {
+            "description": "KULLANILMAZ — Developer API içerik yayınlamaz; verilirse hata döner",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "item"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "delete_cms_item",
+      "module": "cms",
+      "title": "İçeriği sil",
+      "description": "CMS içeriğini siler (soft delete; panelden geri alınabilir). Kullanıcı onayı olmadan ÇAĞIRMAYIN — confirm:true açık onayı temsil eder. Yayındaki içerik için ayrıca allowPublishedEdit:true gerekir: canlı bir adres yok olur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Koleksiyon id'si (24 hex) ya da slug'ı (örn. 'blog', 'projeler')"
+          },
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "description": "İçerik id'si (24 hex) ya da slug'ı"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Kullanıcı silmeyi açıkça onayladı — gönderilmezse özet + confirmId ile onay istenir",
+            "type": "boolean",
+            "const": true
+          },
+          "allowPublishedEdit": {
+            "description": "Yayındaki içeriğin silinmesi de onaylandı",
+            "type": "boolean"
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "item"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "cms:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "list_media",
+      "module": "media",
+      "title": "Medya kütüphanesini listele",
+      "description": "Mağazanın yüklü görsellerini listeler. Dönen obje doğrudan bir bölümün görsel (upload) alanına konabilir. search ile ada göre süz.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "search": {
+            "description": "Dosya adında arama",
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "description": "Sayfa başına (varsayılan 30, en fazla 100)",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "media:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "import_image",
+      "module": "media",
+      "title": "Görseli URL'den içe aktar",
+      "description": "Bir görsel URL'sini mağaza medya kütüphanesine indirir ve bir bölümün görsel alanına konabilecek upload objesi döner. Kredi düşmez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Herkese açık https görsel URL'si"
+          },
+          "name": {
+            "description": "Dosya adı (opsiyonel)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "media:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "generate_image",
+      "module": "media",
+      "title": "AI görsel üret",
+      "description": "Verilen açıklamadan AI görsel üretir; sonuç bir bölümün görsel alanına konabilir. Maliyet mağaza kredisinden düşer (başarısızsa iade). Kredi yetersizse hata döner — tekrar denemeyin.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1500,
+            "description": "Görsel açıklaması (İngilizce daha iyi sonuç verir)"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "landscape",
+              "portrait",
+              "square",
+              "panoramic"
+            ]
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "ai:generate"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": {
+        "operation": "ai-image-generate",
+        "cost": 3,
+        "managedByHandler": true
+      },
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_products",
+      "module": "products",
+      "title": "Ürünleri listele",
+      "description": "Mağaza kataloğunu listeler (ad, adres, durum, marka/kategori/etiket adları, stok, kapak görseli). Filtreler: arama, durum, kategori/marka/etiket (id, slug ya da ad), son değişiklik tarihi. detail:\"full\" varyant sku/fiyat/stok değerlerini de getirir — güncelleme yapmadan önce buna ya da get_product'a bakın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "search": {
+            "description": "Ürün adı, adresi ya da SKU içinde arama",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "draft"
+            ]
+          },
+          "category": {
+            "description": "Kategori id / slug / ad",
+            "type": "string"
+          },
+          "brand": {
+            "description": "Marka id / slug / ad",
+            "type": "string"
+          },
+          "tag": {
+            "description": "Etiket id / slug / ad",
+            "type": "string"
+          },
+          "updatedSince": {
+            "description": "ISO 8601 — bu tarihten sonra değişenler",
+            "type": "string"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "description": "varsayılan 30, en fazla 200",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "detail": {
+            "description": "varsayılan \"summary\". \"full\": her satıra varyantlar (sku, fiyat, stok) ve fiyat aralığı eklenir.",
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_product",
+      "module": "products",
+      "title": "Ürünü getir",
+      "description": "Bir ürünün tamamını döner: çok dilli ad/açıklamalar, marka, kategoriler, etiketler, görseller (CDN URL'leriyle) ve varyantlar (sku, fiyat, liste fiyatı, stok). Fiyat/stok güncellemeden ÖNCE çağırın — upsert_products varyantların tamamını güncel fiyatlarıyla ister.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+          }
+        },
+        "required": [
+          "product"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "upsert_products",
+      "module": "products",
+      "title": "Ürünleri oluştur / güncelle",
+      "description": "Ürün oluşturur ya da günceller (tek çağrıda en fazla 200 kalem; tek ürün için tek elemanlı liste verin). Anahtar: slug, yoksa varyant SKU'su — aynı anahtar ikinci kez gönderilirse ürün güncellenir, kopya açılmaz. Marka/kategori/etiket ADIYLA çözülür, yoksa açılır; görsel URL'i sunucuda indirilir. Kısmi güncelleme doğaldır: yalnız değiştireceğiniz alanları gönderin — varyantlara dokunmayacaksanız `variants` alanını HİÇ göndermeyin (ör. {slug, status}); varyant fiyat/stoğu değişecekse yalnız o varyantları sku ile gönderin. Hangi SKU'ların olduğundan emin değilseniz önce get_product çağırın. DİKKAT: yazma taslak değildir, status:\"active\" ürünü anında vitrine çıkarır — önce dryRun:true ile deneyin.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "description": "Ürün adresi — UPSERT ANAHTARI. Aynı slug ikinci kez gönderilirse ürün GÜNCELLENİR. Boşsa addan üretilir.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "description": "Ürün adı. Yeni üründe slug ya da name zorunlu.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "shortDescription": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]. Düz string varsayılan dile yazılır."
+                },
+                "description": {
+                  "description": "HTML olabilir",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "metaTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]. Düz string varsayılan dile yazılır."
+                },
+                "metaDescription": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "value"
+                        ]
+                      }
+                    }
+                  ],
+                  "description": "Çok dilli metin: \"metin\" | {tr:\"…\",en:\"…\"} | [{code,value}]. Düz string varsayılan dile yazılır."
+                },
+                "status": {
+                  "description": "Yeni üründe varsayılan \"draft\". DİKKAT: \"active\" ürünü ANINDA vitrine çıkarır (taslak değildir). Gönderilmezse mevcut durum korunur.",
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "inactive",
+                    "draft"
+                  ]
+                },
+                "type": {
+                  "description": "Verilmezse varyant sayısına göre simple/variable seçilir",
+                  "type": "string",
+                  "enum": [
+                    "simple",
+                    "variable",
+                    "grouped",
+                    "digital"
+                  ]
+                },
+                "brand": {
+                  "description": "Marka ADI — yoksa açılır",
+                  "type": "string"
+                },
+                "categories": {
+                  "description": "Kategori adı ya da slug'ı — yoksa açılır",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tags": {
+                  "description": "Etiket adı — yoksa açılır",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "images": {
+                  "maxItems": 30,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "description": "\"https://…\" (indirilir) ya da kütüphanedeki dosya adı"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "uploadId": {
+                            "description": "Kütüphanedeki dosyanın 24-hex id'si (list_media / import_image çıktısı)",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Kütüphanede DOSYA ADIYLA arar",
+                            "type": "string"
+                          },
+                          "url": {
+                            "description": "Uzak görsel — SSRF korumalı indirilir, istek başına ≤50, aynı URL bir kez",
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": {}
+                      }
+                    ]
+                  }
+                },
+                "weight": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "maxQuantityPerCart": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "variants": {
+                  "description": "Varyantlar — YALNIZ varyant fiyat/stok/durum/barkod bilgisini değiştirecekseniz gönderin. HİÇ göndermezseniz mevcut varyantlara DOKUNULMAZ (ör. {slug, status} ile yalnız durumu değiştirin); boş dizi geçersizdir. Gönderdiğinizde: sku anahtardır, gönderilmeyen price/stock/isActive korunur, listede olmayan varyant SİLİNMEZ, eşleşmeyen SKU yeni varyant EKLER. Yeni üründe fiyat/stok yazmak için tek elemanlı liste verin (verilmezse sunucu fiyatı 0 olan tek varyant üretir).",
+                  "minItems": 1,
+                  "maxItems": 200,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sku": {
+                        "description": "Stok kodu — güncellemenin anahtarı. VAR OLAN ürünü güncellerken get_product'taki SKU'yu birebir kopyalayın; eşleşmeyen SKU yeni varyant EKLER (varyant silme panel işidir). Yeni üründe boş bırakılabilir: backend adres + varyant değerlerinden türetir.",
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "price": {
+                        "description": "Satış fiyatı. YENİ üründe gönderilmezse 0 yazılır; MEVCUT varyantta gönderilmezse fiyata dokunulmaz.",
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "compareAtPrice": {
+                        "description": "Üstü çizili liste fiyatı",
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "barcode": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "description": "kg",
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "stock": {
+                        "description": "Varsayılan depoya yazılır. Gönderilmezse mevcut stok KORUNUR.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "stocks": {
+                        "description": "Depo bazlı stok (stockLocationId 24-hex). `stock` ile birlikte gönderilirse bu kazanır.",
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "stockLocationId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "quantity": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "stockLocationId",
+                            "quantity"
+                          ]
+                        }
+                      },
+                      "isActive": {
+                        "type": "boolean"
+                      },
+                      "options": {
+                        "description": "Varyant ekseni ADIYLA: {\"Beden\":\"S\",\"Renk\":\"Siyah\"}. Eksen ve değer yoksa AÇILIR; eksen sırası ilk görüldüğü sıradır.",
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "additionalProperties": {}
+                  }
+                }
+              },
+              "additionalProperties": {}
+            },
+            "description": "Ürün listesi (1-200). Bir kalemin hatası diğerlerini düşürmez; o kalem \"skipped\" olur ve issues[]'a yazılır."
+          },
+          "dryRun": {
+            "description": "true → hiçbir şey yazılmaz, yalnız ne olacağı (created/updated/skipped + hatalar) raporlanır. Toplu aktarımdan önce çalıştırın.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "delete_product",
+      "module": "products",
+      "title": "Ürünü sil",
+      "description": "Ürünü siler (soft delete: kayıt korunur, vitrinden ve panelden kalkar). Kullanıcı onayı olmadan ÇAĞIRMAYIN — confirm:true açık onayı temsil eder. Yayındaki bir ürünü silmek canlı bir adresi yok eder; geçici olarak gizlemek için upsert_products ile status:\"inactive\" tercih edin.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+          },
+          "confirm": {
+            "description": "Kullanıcı silmeyi açıkça onayladı — gönderilmezse özet + confirmId ile onay istenir",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "get_product_import_template",
+      "module": "products",
+      "title": "Ürün içe aktarma şablonu",
+      "description": "Panelin ürün içe aktarma şablonunu (CSV) döner: sütun başlıkları + iki örnek satır (biri iki eksenli varyantlı, biri basit ürün). Kullanıcı dosyayı Excel'de doldurup panelden yükleyecekse ya da hangi sütunların desteklendiğini soruyorsa bunu kullanın; ajanın kendi ürün yazması için upsert_products daha doğrudandır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "domain_list",
+      "module": "domains",
+      "title": "Alan adlarını listele",
+      "description": "Mağazanın alan adlarını (ücretsiz Tecof adresi, bağlanan, Tecof'tan satın alınan) durum, registrar, DNS sağlayıcısı, bitiş tarihi ve nameserver'larıyla listeler. DNS/nameserver araçlarının istediği `domainId` buradan alınır. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "domain_check",
+      "module": "domains",
+      "title": "Alan adı sorgula (müsaitlik + fiyat)",
+      "description": "Bir alan adının satın alınabilir olup olmadığını ve TRY fiyatını (KDV dahil, yıl bazında) sorgular; alternatif uzantı önerileri döner. Satın alma bu araçla YAPILMAZ — ödeme tarayıcıda tamamlanır: sonuçtaki `purchaseUrl`'e yönlendir.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Sorgulanacak alan adı (örn. ornekmagaza.com) ya da yalnız ad (ornekmagaza)"
+          },
+          "years": {
+            "description": "Kaç yıllık fiyat (varsayılan uzantının minimum süresi)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "domain_dns_list",
+      "module": "domains",
+      "title": "DNS kayıtlarını listele",
+      "description": "Tecof üzerinden yönetilen bir alan adının DNS kayıtlarını (A/AAAA/CNAME/MX/TXT/SRV/CAA/NS) listeler. DNS Tecof dışındaysa `dns-not-managed` döner ve ipucu verir.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          }
+        },
+        "required": [
+          "domainId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "domain_dns_upsert",
+      "module": "domains",
+      "title": "DNS kaydı ekle/güncelle",
+      "description": "Bir ya da daha çok DNS kaydı ekler (id'siz) veya günceller (id'li). ONAY İSTER: ilk çağrı özet döner, kullanıcı onaylayınca aynı girdiyle confirm:true gönder. `@ A` ve `www CNAME` kayıtları siteye erişimi belirler — değiştirirken özetteki uyarıyı kullanıcıya göster. Sağlayıcının kilitlediği kayıtlar düzenlenemez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          },
+          "records": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "Mevcut kaydın id'si — verilirse güncellenir, verilmezse oluşturulur",
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "AAAA",
+                    "CNAME",
+                    "MX",
+                    "TXT",
+                    "SRV",
+                    "CAA",
+                    "NS"
+                  ],
+                  "description": "Kayıt tipi"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Göreli ad: '@' apex, 'www', '_dmarc' … (FQDN de kabul edilir)"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Değer: IPv4/IPv6/sunucu adı/metin; SRV 'öncelik ağırlık port hedef'; CAA '0 issue letsencrypt.org'"
+                },
+                "ttl": {
+                  "description": "60-86400 sn ya da 1 = otomatik",
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "priority": {
+                  "description": "MX/SRV önceliği",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "proxied": {
+                  "description": "Cloudflare proxy (yalnız Cloudflare bölgesinde; Vercel hedefleri için kapalı tutulur)",
+                  "type": "boolean"
+                },
+                "comment": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "type",
+                "name",
+                "content"
+              ]
+            }
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domainId",
+          "records"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "domain_dns_delete",
+      "module": "domains",
+      "title": "DNS kaydı sil",
+      "description": "Bir DNS kaydını siler. ONAY İSTER (confirm:true). `@ A` / `www CNAME` silinirse site erişilemez olabilir — özet uyarır. Kayıt id'sini domain_dns_list'ten al.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          },
+          "recordId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Silinecek kaydın id'si (domain_dns_list)"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domainId",
+          "recordId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "domain_nameservers_get",
+      "module": "domains",
+      "title": "Nameserver'ları getir",
+      "description": "Alan adının kayıtlı nameserver'larını, DNS sağlayıcısını ve (Tecof DNS'e dönmek için) önerilen bölge nameserver'larını döner. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          }
+        },
+        "required": [
+          "domainId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "domain_nameservers_set",
+      "module": "domains",
+      "title": "Nameserver'ları değiştir",
+      "description": "Tecof'tan satın alınan alan adının nameserver'larını registrar'da değiştirir (2-5 sunucu). ONAY İSTER. Tecof bölgesinin dışına çıkılırsa DNS paneli kapanır (external); domain_nameservers_get'teki `recommended` listesi Tecof DNS'e geri döndürür.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          },
+          "nameservers": {
+            "minItems": 2,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sunucu adları (örn. ns1.ornek.com)"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domainId",
+          "nameservers"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "domain_sync",
+      "module": "domains",
+      "title": "Registrar bilgisini eşitle",
+      "description": "Tecof'tan satın alınan alan adının registrar/bölge bilgisini (bitiş tarihi, nameserver, kilit, bölge durumu) sağlayıcıdan yeniden okur ve bekleyen teslimat adımlarını dener. Yazma değildir ama sağlayıcıyı çağırır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "domainId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Alan adı kaydının id'si (domain_list'ten)"
+          }
+        },
+        "required": [
+          "domainId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "domains:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_start_session",
+      "module": "code",
+      "title": "Geliştirme oturumu başlat (Cloud IDE)",
+      "description": "Tema için bulut geliştirme oturumu (sandbox) başlatır ve saniyeler içinde döner: {sessionId, status:\"booting\"|\"active\", pollAfterMs}. Boot arka planda sürer (klon, kurulum, dev server); pollAfterMs sonra ide_session_status {sessionId} ile sorgula — active olunca previewUrl gelir ve diğer ide_* araçları çalışır. Aynı kullanıcının canlı oturumu varsa yeniden kullanılır (kredi düşmez); başka kullanıcının oturumu varsa 409 session-busy. KREDİ DÜŞER (ide-session; aktif her 10 dk ek ücret). restoreDraft:true son otomatik taslağı geri yükler; fromSnapshotId ide_list_snapshots'taki görüntüden açar. IDE arayüz bağlantısı bu araçtan DÖNMEZ (panel içindir).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "restoreDraft": {
+            "description": "Son otomatik taslağı (tecof-ide-draft dalı) çalışma alanına geri yükle",
+            "type": "boolean"
+          },
+          "fromSnapshotId": {
+            "description": "ide_list_snapshots'tan bir snapshotId — çalışma alanı olduğu gibi geri gelir",
+            "type": "string",
+            "maxLength": 200
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": {
+        "operation": "ide-session",
+        "cost": 5,
+        "managedByHandler": true
+      },
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "ide_session_status",
+      "module": "code",
+      "title": "Oturum durumu",
+      "description": "Geliştirme oturumunun durumunu döner: booting (hazırlanıyor), active (previewUrl + expiresAt), failed (bootError), stopped. sessionId verilirse o oturum; verilmezse temanın (themeId ya da aktif tema) canlı oturumu (yoksa found:false). ide_start_session sonrası pollAfterMs aralıkla bunu çağır; booting'de 409 vermez. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "description": "Belirli bir oturum (ide_start_session → sessionId)",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_ping",
+      "module": "code",
+      "title": "Oturum canlılık damgası",
+      "description": "Aktif oturumun son etkinlik damgasını tazeler ve süre bitişini (expiresAt) döner; 5 dk'da bir arka planda taslak kaydı tetikler. Uzun işler arasında 1-2 dk'da bir çağır ki oturum boşta sayılıp kapanmasın. Süre UZATMAZ (bkz. ide_extend). Oturum active değilse 409 session-not-active.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_extend",
+      "module": "code",
+      "title": "Oturum süresini uzat (+45 dk)",
+      "description": "Aktif oturumun süresini 45 dk uzatır. ONAY İSTER ve KREDİ DÜŞER (ide-session; onaysız ilk çağrı ücretsizdir, özet maliyeti söyler; kullanıcı onaylayınca aynı girdiyle confirm:true gönder). Süre bitişini ide_session_status/ide_ping expiresAt ile izle; kalan süre 10 dk'nın altındaysa çağır. Oturumu açan kullanıcı olmalısın (başka kullanıcı → 409 session-busy).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": {
+        "operation": "ide-session",
+        "cost": 5,
+        "managedByHandler": true
+      },
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "ide_stop",
+      "module": "code",
+      "title": "Oturumu kapat",
+      "description": "Geliştirme oturumunu kapatır: önce taslak kaydeder (tecof-ide-draft dalı), sonra sandbox'ı durdurur. snapshot:true ile kapatmadan önce 30 gün saklanan anlık görüntü alır (sonraki ide_start_session {fromSnapshotId} oradan açar). Yalnız kendi oturumunu kapatabilirsin; başka kullanıcının oturumunu bitirmek için onay kapılı ide_snapshot {takeOver:true}. Hazırlanmakta (booting) olan oturum kapatılamaz (409 session-not-active). Kapalı oturumda tekrar çağrı zararsızdır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "snapshot": {
+            "description": "Kapatmadan önce anlık görüntü al (30 gün)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_snapshot",
+      "module": "code",
+      "title": "Anlık görüntü al (oturumu bitirir)",
+      "description": "Aktif sandbox'ın anlık görüntüsünü alır (dosyalar + node_modules; 30 gün) ve OTURUMU BİTİRİR — görüntü alma sandbox'ı durdurur. ONAY İSTER (confirm:true). Önce taslak da kaydedilir. Devam etmek için ide_start_session {fromSnapshotId}. Başka kullanıcının oturumu için takeOver:true — özet o kullanıcıyı adlandırır; onay olmadan devralma yoktur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "reason": {
+            "description": "Görüntünün amacı (listede görünür)",
+            "type": "string",
+            "maxLength": 300
+          },
+          "takeOver": {
+            "description": "Başka kullanıcının oturumunu devral (özet o kullanıcıyı adlandırır; onaysız kabul edilmez)",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "ide_list_snapshots",
+      "module": "code",
+      "title": "Anlık görüntüleri listele",
+      "description": "Temanın geçerli (süresi dolmamış) sandbox anlık görüntülerini listeler: snapshotId, sebep, tarih, bitiş, kullanıcı, baseSha. ide_start_session {fromSnapshotId} için id buradan alınır. themeId verilmezse aktif tema. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_list_dir",
+      "module": "code",
+      "title": "Sandbox klasörünü listele",
+      "description": "Sandbox çalışma alanında (repo kökü) bir klasörü listeler: ad + tür (file/dir/symlink). node_modules ve .git hiç listelenmez; en fazla 500 girdi (truncated:true). path göreli olmalı (boş = kök). Salt-okunur; oturum active olmalı (aksi 409 session-not-active).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "path": {
+            "description": "Göreli klasör yolu; boş/verilmezse kök",
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_read_file",
+      "module": "code",
+      "title": "Sandbox dosyasını oku",
+      "description": "Sandbox'taki bir dosyayı okur (en fazla 200 KB; büyükse truncated:true ve baş kısmı gelir). İkili dosyada content null, binary:true döner. .env*, .npmrc, .git/, node_modules/ ve sembolik bağlar erişime kapalıdır (path-not-allowed). Önce ide_list_dir ile yolu doğrula. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Repo köküne göreli yol (örn. src/app/page.tsx). Mutlak yol ve '..' kabul edilmez"
+          },
+          "maxBytes": {
+            "description": "Okunacak en fazla bayt (varsayılan ve tavan 200000)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200000
+          }
+        },
+        "required": [
+          "sessionId",
+          "path"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_write_files",
+      "module": "code",
+      "title": "Sandbox'a dosya yaz",
+      "description": "Sandbox çalışma alanına dosya yazar (oluşturur/üzerine yazar; tek çağrıda en fazla 100; içerik TAM metin). Değişiklik yalnız sandbox'tadır — yayın için ide_commit_push (onaylı). Yasak yollar: .env*, .npmrc, .git/, .github/, .vercel/, node_modules/ (403 path-not-allowed). vercel.json dağıtım ayarlarını değiştirir: onay ister (409 + özet; aynı girdiyle confirm:true). Yazma oturumu açan kullanıcıya aittir (başka kullanıcı → 409 session-busy). Dev server değişikliği previewUrl'de canlı yansıtır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "files": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "Repo köküne göreli yol (örn. src/app/page.tsx). Mutlak yol ve '..' kabul edilmez"
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 1000000,
+                  "description": "Dosyanın TAM metin içeriği (UTF-8; parça/diff değil)"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ]
+            },
+            "description": "Yazılacak dosyalar {path, content}"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yalnız onay isteyen durumlarda (özetle birlikte 409 döner) true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "files"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:write"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "ide_exec",
+      "module": "code",
+      "title": "Sandbox'ta komut çalıştır (izin listesi)",
+      "description": "Sandbox'ta izin listesindeki bir komutu çalıştırır ve çıktıyı döner (stdout ≤64 KB, stderr ≤16 KB, exitCode, durationMs). Komutlar: npm-install (--ignore-scripts), npm-install-scripts (kurulum script'lerini çalıştırır — onay ister: confirm:true), build, lint, typecheck, test, git-status, git-diff, git-log, ls [yol], dev-restart. Kabuk yok, npx yok, serbest komut yok — başka komut 400 exec-command-not-allowed. Varsayılan zaman aşımı 5 dk, en fazla 10 dk; istek iptal edilirse komut öldürülür. Oturumu açan kullanıcı olmalısın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "description": "İzin listesindeki komut anahtarı: npm-install, npm-install-scripts, build, lint, typecheck, test, git-status, git-diff, git-log, ls, dev-restart"
+          },
+          "args": {
+            "description": "Yalnız `ls` için tek göreli yol; diğer komutlar argüman almaz",
+            "maxItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "timeoutMs": {
+            "description": "Zaman aşımı ms (varsayılan 300000, en fazla 600000)",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 600000
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yalnız onay isteyen durumlarda (özetle birlikte 409 döner) true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "command"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "sandbox:run"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 600000,
+      "meta": {}
+    },
+    {
+      "name": "ide_commit_push",
+      "module": "code",
+      "title": "Sandbox değişikliklerini commit + push et (ÜRETİM yayını)",
+      "description": "Sandbox'taki değişiklikleri (git status'a göre; .env*/.npmrc/.github/.vercel hariç) tema deposunun VARSAYILAN DALINA tek commit olarak push eder. ONAY İSTER: ilk çağrı özet (dosya listesi, mesaj) döner; kullanıcı onaylayınca aynı girdiyle confirm:true gönder. DİKKAT: varsayılan dala push, Vercel GitHub entegrasyonuyla ÜRETİM yayınını tetikler — önce ide_exec build/lint ile doğrula, sonra theme_deploy_status ile izle. Oturum başka kullanıcınınsa 409 session-busy; devralmak için takeOver:true (özet kullanıcıyı adlandırır). Değişiklik yoksa noChanges:true.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Commit mesajı"
+          },
+          "takeOver": {
+            "description": "Başka kullanıcının oturumunu devral (özet o kullanıcıyı adlandırır; onaysız kabul edilmez)",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "message"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:write"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "ide_save_draft",
+      "module": "code",
+      "title": "Taslak kaydet (yayınsız)",
+      "description": "Commit'lenmemiş sandbox değişikliklerini deponun tecof-ide-draft dalına taslak olarak kaydeder (force; varsayılan dala dokunmaz, yayın tetiklemez). Oturum bitmeden sigorta olarak çağır; sonraki ide_start_session {restoreDraft:true} geri yükler. Değişiklik yoksa draft:\"no-changes\". Oturumu açan kullanıcı olmalısın.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Oturum id'si (ide_start_session → sessionId; sandboxId de kabul edilir)"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:write"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "theme_repo_tree",
+      "module": "code",
+      "title": "Tema deposu dosya ağacı",
+      "description": "Özel temanın GitHub deposundaki dosya ağacını (varsayılan dal, özyinelemeli) listeler; path ile alt klasöre daralt. .env*, .npmrc, node_modules gizlenir; en fazla 2000 girdi (truncated:true). Sandbox oturumu GEREKMEZ — deponun yayınlanmış (HEAD) hâlini gösterir; sandbox'taki kaydedilmemiş değişiklikler için ide_list_dir. Salt-okunur; yalnız özel (isCustom) temalar.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Yalnız bu klasörün altı (göreli)",
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "theme_get_file",
+      "module": "code",
+      "title": "Tema deposundan dosya oku",
+      "description": "Özel temanın deposundan tek dosyanın içeriğini okur (varsayılan dal HEAD; en fazla 200 KB, büyükse truncated:true). .env*, .npmrc, .git/, node_modules/ yasak (path-not-allowed); klasör yolu → is-directory (theme_repo_tree kullan). İkili dosyada content null. Sandbox gerekmez. Yolu theme_repo_tree'den al. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Repo köküne göreli yol (örn. src/app/page.tsx). Mutlak yol ve '..' kabul edilmez"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "theme_commit_files",
+      "module": "code",
+      "title": "Depoya dosya commit et (ÜRETİM yayını)",
+      "description": "Verilen dosyaları (TAM içerik; en fazla 100) tema deposunun VARSAYILAN DALINA tek commit olarak yazar — sandbox gerekmez. ONAY İSTER: özet dosya yollarını ve mesajı gösterir; kullanıcı onaylayınca aynı girdiyle confirm:true. DİKKAT: push, Vercel entegrasyonuyla ÜRETİM yayınını tetikler; derleme hatası siteyi bozabilir — mümkünse önce sandbox'ta doğrula (ide_write_files + ide_exec build). Yasak yollar: .env*, .npmrc, .git/, .github/, .vercel/. Yalnız özel temalar.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "files": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "description": "Repo köküne göreli yol (örn. src/app/page.tsx). Mutlak yol ve '..' kabul edilmez"
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 1000000,
+                  "description": "Dosyanın TAM metin içeriği (UTF-8; parça/diff değil)"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ]
+            },
+            "description": "Yazılacak dosyalar {path, content}"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Commit mesajı"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "message"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:write"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "theme_deploy",
+      "module": "code",
+      "title": "Yeniden dağıt (ÜRETİM)",
+      "description": "Özel temanın Vercel projesinde ÜRETİM yeniden dağıtımı tetikler — push olmadan, son commit yeniden derlenir (ör. ortam değişkeni ya da CMS yapısı değiştikten sonra). ONAY İSTER (confirm:true). Sonucu theme_deploy_status {deploymentId} ile izle. Commit/push zaten dağıtım tetiklediği için commit sonrası GEREKMEZ. Yalnız özel temalar; Vercel projesi yoksa no-vercel-project.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — yıkıcı/ücretli işlem için true gönderin",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "deploy:write"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "theme_deploy_status",
+      "module": "code",
+      "title": "Dağıtım durumu",
+      "description": "Temanın Vercel projesindeki son dağıtımın (ya da deploymentId verilen dağıtımın) durumunu döner: readyState (QUEUED/BUILDING/READY/ERROR/CANCELED), url, hata mesajı/kodu, tarihler. theme_commit_files / ide_commit_push / theme_deploy sonrası 20-30 sn aralıkla sorgula. Salt-okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "deploymentId": {
+            "description": "Belirli dağıtım (theme_deploy → deploymentId); verilmezse en son",
+            "type": "string",
+            "maxLength": 100
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "code:read"
+        ],
+        "feature": "codeAccess"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "remember",
+      "module": "general",
+      "title": "Mağaza hafızasına yaz",
+      "description": "Mağaza hakkında kalıcı bir bilgi kaydeder (örn. 'Kargo anlaşması MNG ile', 'Faturalar Paraşüt'ten kesiliyor'). Kullanıcı 'bunu unutma/hatırla' dediğinde veya önemli bir mağaza gerçeği öğrendiğinde kullan.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "string",
+            "description": "Hatırlanacak kısa, net bilgi (tek cümle; 300 karaktere kırpılır)"
+          }
+        },
+        "required": [
+          "fact"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "memory:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "search_knowledge",
+      "module": "general",
+      "title": "Bilgi havuzunda ara",
+      "description": "Tecof bilgi havuzunda VE destek merkezi makalelerinde arar; 'nasıl yapılır', platform özellikleri, kural/politika sorularına kaynaklı cevap verir. Panel kullanımı, kurulum, özellik soruları için ÖNCE bunu kullan. Bulunan kaynaklara dayanarak cevap ver; kaynak yoksa uydurma.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Kullanıcının sorusu / aranacak konu"
+          },
+          "limit": {
+            "description": "En fazla sonuç (varsayılan 6, en çok 10)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "analytics:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "analytics_summary",
+      "module": "general",
+      "title": "Analitik özeti",
+      "description": "Mağaza trafiği ve dönüşüm özeti: ziyaretçi, sayfa görüntüleme, sepete ekleme, checkout başlatma, sipariş ve dönüşüm oranı + en çok görüntülenen sayfalar. Dönem: today/last7/last30 (varsayılan last7).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "period": {
+            "description": "Dönem (varsayılan last7)",
+            "type": "string",
+            "enum": [
+              "today",
+              "last7",
+              "last30"
+            ]
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "analytics:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "store_health_check",
+      "module": "general",
+      "title": "Mağaza sağlık kontrolü",
+      "description": "Mağazanın 'bugün neye bakmalıyım' özetini çıkarır: bekleyen/ödenmemiş sipariş sayısı, tükenen ve azalan stok, taslak ürünler. Kullanıcı 'durum ne', 'bugün ne yapmalıyım', 'mağaza sağlığı' gibi sorduğunda kullan.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "analytics:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    }
+  ]
+}

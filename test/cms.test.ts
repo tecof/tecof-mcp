@@ -176,7 +176,7 @@ describe("CMS araçları", () => {
         const { client, backend } = await setup();
 
         /* Kısmi gövde: yalnız başlık gönderiliyor — govde alanı KORUNMALI. */
-        const before = backend.cmsItems.find((i: any) => i.slug === "ilk-yazi");
+        const before = backend.cmsItems.find((i: any) => i.slug === "ilk-yazi")!;
         before.data = { baslik: [{ code: "tr", value: "İlk yazı" }], govde: [{ code: "tr", value: "<p>gövde</p>" }] };
 
         const merged = await client.callTool("update_cms_item", {
@@ -186,7 +186,7 @@ describe("CMS araçları", () => {
         });
         expect(merged.isError).toBe(false);
         expect(merged.data.dataMode).toBe("merge");
-        const afterMerge = backend.cmsItems.find((i: any) => i.slug === "ilk-yazi");
+        const afterMerge = backend.cmsItems.find((i: any) => i.slug === "ilk-yazi")!;
         expect(afterMerge.data.govde).toBeTruthy();
         expect(afterMerge.data.baslik[0].value).toBe("Yeni başlık");
 
@@ -199,7 +199,7 @@ describe("CMS araçları", () => {
         });
         expect(replaced.isError).toBe(false);
         expect(replaced.data.dataMode).toBe("replace");
-        expect(backend.cmsItems.find((i: any) => i.slug === "ilk-yazi").data.govde).toBeUndefined();
+        expect(backend.cmsItems.find((i: any) => i.slug === "ilk-yazi")!.data.govde).toBeUndefined();
     });
 
     it("cms scope'u olmayan anahtar okunur hata alır", async () => {

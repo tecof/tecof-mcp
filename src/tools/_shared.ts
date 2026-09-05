@@ -104,14 +104,22 @@ export function validationErrorResult(title: string, errors: Issue[], warnings: 
     return errorResult(`${title}\n${formatIssues(errors)}`, { errors, warnings });
 }
 
+/** Uyarı listesini `[code] path: message` satırlarına çevirir (create/update_page yanıtlarındaki `warnings`). */
+export function formatIssueLines(issues: Issue[]): string[] {
+    return issues.map((w) => `[${w.code}] ${w.path}: ${w.message}`);
+}
+
 /**
  * Tool gövdesini sarar: ToolError/ApiError → isError sonucu; beklenmeyen
  * hatalar da yutulmaz ama stack yerine mesaj döner (stdout'a log basılmaz).
+ *
+ * İkinci parametre SDK'nın çağrı bağlamıdır (`ctx.mcpReq` — progressToken,
+ * iptal sinyali, notify); remote mod bunu kullanır, yerel araçlar yok sayar.
  */
-export function wrapTool<A>(ctx: ServerContext, name: string, fn: (args: A) => Promise<ToolResult>): (args: A) => Promise<ToolResult> {
-    return async (args: A) => {
+export function wrapTool<A, X = unknown>(ctx: ServerContext, name: string, fn: (args: A, extra: X) => Promise<ToolResult>): (args: A, extra: X) => Promise<ToolResult> {
+    return async (args: A, extra: X) => {
         try {
-            return await fn(args);
+            return await fn(args, extra);
         } catch (err: any) {
             // Şifresiz TECOF_API_URL uyarısı her hata mesajına ipucu olarak eklenir (#1)
             const hint = ctx.insecureApiUrlWarning ? `\nİpucu: ${ctx.insecureApiUrlWarning}` : "";

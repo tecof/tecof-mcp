@@ -11,6 +11,22 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/**
+ * Çalışma modu (0.2.0):
+ *  - `local`  → araçlar bu pakette tanımlıdır, Developer API v1 uçları doğrudan
+ *               çağrılır (0.1.x davranışı). VARSAYILAN.
+ *  - `remote` → araç kataloğu backend'in Tools API'sinden gelir
+ *               (`GET /api/v1/tools?surface=mcp`), çağrılar
+ *               `POST /api/v1/tools/:name?stream=1` üzerinden koşar. Yalnız yerel
+ *               tema kataloğuna ihtiyaç duyan adımlar (list_components,
+ *               validate_document ve create/update_page'in build/validate'i)
+ *               istemcide kalır.
+ * Varsayılan bilinçli olarak `local`: mevcut kurulumlar ve testler değişmeden
+ * çalışmaya devam etsin; remote opt-in'dir.
+ */
+export type McpMode = "local" | "remote";
+export const MCP_MODES: readonly McpMode[] = ["local", "remote"];
+
 export type TecofConfig = {
     /** Tema reposunun kökü — katalog buradan taranır, .env buradan okunur */
     projectDir: string;
@@ -18,6 +34,12 @@ export type TecofConfig = {
     themeId: string | null;
     token: string | null;
     localUrl: string;
+    /** TECOF_MCP_MODE — yoksa `local`. Opsiyonel: elle kurulan config nesneleri (testler) değişmesin. */
+    mode?: McpMode;
+    /** TECOF_TOOLSETS — uzak katalogdan yalnız bu modüller (pages,cms,…); null = hepsi */
+    toolsets?: string[] | null;
+    /** Ölümcül olmayan konfigürasyon uyarıları (tanınmayan mod gibi); bin stderr'e basar */
+    warnings?: string[];
     /** Hangi değerin nereden geldiği — hata mesajlarında kullanıcıya yol göstermek için */
     sources: Record<string, "env" | ".env" | ".env.local" | "default" | "missing">;
 };
@@ -65,6 +87,21 @@ export function resolveProjectDir(env: NodeJS.ProcessEnv = process.env, cwd = pr
     return path.resolve(candidate && candidate.trim() ? candidate : cwd);
 }
 
+/**
+ * `TECOF_TOOLSETS=pages,cms` → ["pages","cms"]. Kural backend'in `parseToolsets`
+ * fonksiyonuyla AYNI (küçük harf, `^[a-z][a-z0-9_]{1,31}$`, tekrarlar atılır);
+ * geçerli ad kalmazsa null (= tüm araçlar). Aynı kuralı iki tarafta tutmak,
+ * burada kabul edilip sunucuda yok sayılan bir ad olmasın diye.
+ */
+export function parseToolsets(raw: string | null | undefined): string[] | null {
+    if (!raw) return null;
+    const list = raw
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => /^[a-z][a-z0-9_]{1,31}$/.test(s));
+    return list.length ? Array.from(new Set(list)) : null;
+}
+
 export type LoadConfigOptions = {
     env?: NodeJS.ProcessEnv;
     cwd?: string;
@@ -83,6 +120,7 @@ export function loadConfig(options: LoadConfigOptions = {}): TecofConfig {
     const dotenvLocal = readDotenvFile(path.join(projectDir, ".env.local")) ?? {};
 
     const sources: TecofConfig["sources"] = {};
+    const warnings: string[] = [];
 
     const pick = (keys: string[], fallback: string | null): string | null => {
         for (const key of keys) {
@@ -116,12 +154,30 @@ export function loadConfig(options: LoadConfigOptions = {}): TecofConfig {
     const token = pick(["TECOF_API_TOKEN"], null);
     const localUrl = pick(["TECOF_LOCAL_URL"], "http://localhost:3000")!;
 
+    /* Tanınmayan mod sessizce remote'a düşmemeli (ağ davranışı değişir); local'e
+       düşer ve uyarı kaydedilir — kullanıcı yazım hatasını stderr'de görür. */
+    const modeRaw = pick(["TECOF_MCP_MODE"], "local")!;
+    let mode = modeRaw.trim().toLowerCase() as McpMode;
+    if (!MCP_MODES.includes(mode)) {
+        warnings.push(`TECOF_MCP_MODE="${modeRaw}" tanınmadı (local | remote); local kullanıldı.`);
+        mode = "local";
+    }
+
+    const toolsetsRaw = pick(["TECOF_TOOLSETS"], null);
+    const toolsets = parseToolsets(toolsetsRaw);
+    if (toolsetsRaw && !toolsets) {
+        warnings.push(`TECOF_TOOLSETS="${toolsetsRaw}" geçerli bir modül adı içermiyor; tüm araçlar listelenecek.`);
+    }
+
     return {
         projectDir,
         apiUrl: apiUrl ? apiUrl.replace(/\/+$/, "") : null,
         themeId,
         token,
         localUrl: localUrl.replace(/\/+$/, ""),
+        mode,
+        toolsets,
+        warnings,
         sources,
     };
 }

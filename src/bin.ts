@@ -5,6 +5,11 @@
  * Başlangıçta backend'e GİDİLMEZ (tembel /me): token eksik/yanlış olsa da
  * istemci tools/list alabilsin ve kullanıcı hatayı tool yanıtında görsün.
  * Yalnız konfigürasyon eksikleri stderr'e yazılır.
+ *
+ * Remote modda (TECOF_MCP_MODE=remote) tek istisna: araç kataloğu canlı
+ * alınmaya çalışılır — 3 sn bütçeyle ve arka planda; süre dolarsa paketteki
+ * snapshot kullanılır. Fabrika `ready()`'yi bekler ki ilk `tools/list` canlı
+ * kataloğu görsün; bekleme üst sınırı katalog zaman aşımıdır (Codex 10 sn).
  */
 
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -29,7 +34,8 @@ process.on("uncaughtException", (err: any) => {
 const config = loadConfig();
 const ctx = new ServerContext({ config, log });
 
-log(`v${SERVER_VERSION} başlatılıyor — proje: ${config.projectDir}`);
+log(`v${SERVER_VERSION} başlatılıyor — mod: ${ctx.mode}, proje: ${config.projectDir}`);
+for (const warning of config.warnings ?? []) log(`UYARI: ${warning}`);
 for (const problem of describeMissingConfig(config)) log(`UYARI: ${problem}`);
 if (config.apiUrl) log(`API: ${config.apiUrl} (kaynak: ${config.sources.TECOF_API_URL})`);
 if (ctx.insecureApiUrlWarning) log(`UYARI: ${ctx.insecureApiUrlWarning}`);
@@ -44,6 +50,30 @@ if (ctx.api) {
         .catch((err) => log(`UYARI: /me başarısız — ${err?.message ?? err}`));
 }
 
-serveStdio(() => buildServer({ ctx }), {
-    onerror: (error) => log(`transport hatası: ${error?.message ?? error}`),
-});
+if (ctx.mode === "remote") {
+    if (ctx.registry) {
+        log(`Uzak katalog: ${ctx.registry.catalogUrl}${config.toolsets?.length ? ` (toolsets: ${config.toolsets.join(",")})` : ""}`);
+    } else {
+        log("UYARI: remote mod TECOF_API_URL + TECOF_API_TOKEN ister; katalog paketteki snapshot'tan yüklenecek, araç çağrıları yapılandırma hatası dönecek.");
+    }
+    log(`Yerel tema kataloğu: ${ctx.hasLocalCatalog() ? "var (list_components/validate_document yerel, create/update_page hibrit)" : "yok (tüm araçlar sunucudan)"}`);
+    /* Fetch hemen başlar ki istemcinin initialize'ı gelene kadar geçen süre bütçeden düşsün */
+    void ctx.remoteCatalog.ready().then((state) => {
+        log(
+            state.source === "live"
+                ? `Katalog: canlı, ${state.catalog.tools.length} araç (v${state.catalog.version || "?"})`
+                : `Katalog: snapshot, ${state.catalog.tools.length} araç (v${state.catalog.version || "?"})`
+        );
+    });
+    ctx.remoteCatalog.startBackgroundRefresh();
+}
+
+serveStdio(
+    async () => {
+        if (ctx.mode === "remote") await ctx.remoteCatalog.ready();
+        return buildServer({ ctx });
+    },
+    {
+        onerror: (error) => log(`transport hatası: ${error?.message ?? error}`),
+    }
+);

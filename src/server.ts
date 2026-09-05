@@ -2,11 +2,18 @@
  * McpServer fabrikası — stdio (bin.ts) ve ileride HTTP transport aynı fonksiyonu
  * kullanır. Her bağlantı için yeni McpServer üretilir (SDK v2 factory modeli),
  * ServerContext (katalog cache + /me cache) paylaşılır.
+ *
+ * İki mod (config.ts `McpMode`):
+ *   local  → 26 araç bu paketten (0.1.x ile birebir).
+ *   remote → araçlar backend kataloğundan (canlı ya da snapshot); yerel tema
+ *            kataloğu varsa list_components/validate_document yerel, create/
+ *            update_page hibrit (src/remote/registerRemoteTools.ts).
  */
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { createRequire } from "node:module";
 import { ServerContext } from "./context.js";
+import { registerRemoteTools } from "./remote/registerRemoteTools.js";
 import { registerCreateCmsCollection } from "./tools/create_cms_collection.js";
 import { registerCreateCmsItem } from "./tools/create_cms_item.js";
 import { registerCreatePage } from "./tools/create_page.js";
@@ -64,6 +71,8 @@ export type BuildServerOptions = {
 };
 
 export function buildServer({ ctx }: BuildServerOptions): McpServer {
+    if (ctx.mode === "remote") return buildRemoteServer(ctx);
+
     const server = new McpServer(
         { name: SERVER_NAME, version: SERVER_VERSION, title: "Tecof" },
         { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
@@ -102,6 +111,42 @@ export function buildServer({ ctx }: BuildServerOptions): McpServer {
     registerUpsertProducts(server, ctx);
     registerDeleteProduct(server, ctx);
     registerGetProductImportTemplate(server, ctx);
+
+    return server;
+}
+
+/**
+ * Remote mod. Katalog `ctx.remoteCatalog.current()`'tan okunur — senkron: canlı
+ * katalog daha gelmediyse snapshot'tır (bin.ts factory'de `ready()`'yi bekler,
+ * testler de öyle). Canlı katalog sonradan gelirse eksik araçlar bu sunucuya
+ * eklenir ve `tools/list_changed` gönderilir; tools/list böylece çevrimdışı da
+ * deterministik kalır, başlangıç ağa bloklanmaz.
+ */
+function buildRemoteServer(ctx: ServerContext): McpServer {
+    const state = ctx.remoteCatalog.current();
+    /* Sunucu talimatı kataloğun kendi metnidir (backend SERVER_INSTRUCTIONS, ≤512);
+       boşsa paketinki — iki yüzeyde aynı akış anlatılsın. */
+    const instructions = state.catalog.instructions?.trim() || SERVER_INSTRUCTIONS;
+    const server = new McpServer(
+        { name: SERVER_NAME, version: SERVER_VERSION, title: "Tecof" },
+        { capabilities: { tools: { listChanged: true } }, instructions }
+    );
+
+    const registration = registerRemoteTools(server, ctx, state.catalog, { localCatalog: ctx.hasLocalCatalog() });
+
+    /* Dinleyici sunucu ömrünce kalır: stdio'da tek bağlantı var; HTTP barındırmada
+       istek başına fabrika kullanan bir sarmalayıcı `stop()`/`onUpdate` dönüşünü
+       kendisi yönetmeli. */
+    ctx.remoteCatalog.onUpdate((next) => {
+        const added = registration.add(next.catalog.tools);
+        if (!added.length) return;
+        ctx.log(`Katalog yenilendi: ${added.length} yeni araç eklendi (${added.join(", ")}).`);
+        try {
+            if (server.isConnected()) server.sendToolListChanged();
+        } catch (err: any) {
+            ctx.log(`tools/list_changed gönderilemedi: ${err?.message ?? err}`);
+        }
+    });
 
     return server;
 }

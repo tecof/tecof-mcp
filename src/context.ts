@@ -5,12 +5,20 @@
  * gidilir ve kısa süre önbellekte tutulur. Neden: MCP istemcileri sunucuyu
  * oturum başında başlatır; o anda token eksik/yanlış olsa bile `tools/list`
  * çalışmalı ki kullanıcı "sunucu kalkmıyor" yerine anlamlı bir hata görsün.
+ *
+ * Remote modda (0.2.0) iki ek üye: `registry` (Tools API istemcisi) ve
+ * `remoteCatalog` (canlı katalog / snapshot durumu). İkisi de local modda
+ * zararsızdır — registry yalnız token+url varsa kurulur, katalog tembel.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { ApiError, describeInsecureApiUrl, TecofApiClient } from "./api.js";
 import { ComponentCatalog } from "./catalog/index.js";
-import { describeMissingConfig, type TecofConfig } from "./config.js";
+import { describeMissingConfig, type McpMode, type TecofConfig } from "./config.js";
 import type { LanguageContext } from "./document/fields.js";
+import { RemoteCatalog } from "./remote/catalog.js";
+import { RegistryClient } from "./remote/registryClient.js";
 import type { MeResponse } from "./types.js";
 
 /** Tool'a "isError" olarak yansıtılacak, ajanın okuyup düzeltebileceği hata. */
@@ -38,6 +46,8 @@ export type ServerContextOptions = {
     fetch?: typeof fetch;
     /** ms; /me önbellek süresi (varsayılan 5 dk) */
     siteTtlMs?: number;
+    /** ms; uzak katalog isteği bütçesi (varsayılan 3 sn) — testler kısaltır */
+    catalogTimeoutMs?: number;
     log?: (message: string) => void;
 };
 
@@ -45,8 +55,13 @@ const FALLBACK_LANG: LanguageContext = { languages: ["tr"], defaultLanguage: "tr
 
 export class ServerContext {
     readonly config: TecofConfig;
+    readonly mode: McpMode;
     readonly api: TecofApiClient | null;
     readonly catalog: ComponentCatalog;
+    /** Tools API istemcisi (remote mod); token/url yoksa null */
+    readonly registry: RegistryClient | null;
+    /** Canlı katalog ↔ snapshot durumu (remote mod) */
+    readonly remoteCatalog: RemoteCatalog;
     readonly log: (message: string) => void;
     /** TECOF_API_URL şifresiz (http, loopback değil) ise uyarı metni; her tool hatasına ipucu olarak eklenir */
     readonly insecureApiUrlWarning: string | null;
@@ -58,18 +73,29 @@ export class ServerContext {
 
     constructor(options: ServerContextOptions) {
         this.config = options.config;
+        this.mode = options.config.mode ?? "local";
         this.log = options.log ?? ((m) => process.stderr.write(`[tecof-mcp] ${m}\n`));
         this.siteTtlMs = options.siteTtlMs ?? 5 * 60_000;
         this.catalog = new ComponentCatalog(options.config.projectDir);
         this.insecureApiUrlWarning = describeInsecureApiUrl(options.config.apiUrl);
-        this.api =
-            options.config.token && options.config.apiUrl
-                ? new TecofApiClient({
-                    baseUrl: options.config.apiUrl,
-                    token: options.config.token,
-                    fetch: options.fetch as any,
-                })
-                : null;
+        const hasApi = !!(options.config.token && options.config.apiUrl);
+        this.api = hasApi
+            ? new TecofApiClient({
+                baseUrl: options.config.apiUrl!,
+                token: options.config.token!,
+                fetch: options.fetch as any,
+            })
+            : null;
+        this.registry = hasApi
+            ? new RegistryClient({
+                baseUrl: options.config.apiUrl!,
+                token: options.config.token!,
+                fetch: options.fetch as any,
+                toolsets: options.config.toolsets ?? null,
+                catalogTimeoutMs: options.catalogTimeoutMs,
+            })
+            : null;
+        this.remoteCatalog = new RemoteCatalog({ registry: this.registry, toolsets: options.config.toolsets ?? null, log: this.log });
     }
 
     /** API istemcisi yoksa (token/url eksik) net mesajla patlat. */
@@ -78,6 +104,27 @@ export class ServerContext {
             throw new ToolError(describeMissingConfig(this.config).join(" "));
         }
         return this.api;
+    }
+
+    /** Tools API istemcisi yoksa aynı yol gösteren mesaj (remote mod araçları). */
+    requireRegistry(): RegistryClient {
+        if (!this.registry) {
+            throw new ToolError(describeMissingConfig(this.config).join(" "));
+        }
+        return this.registry;
+    }
+
+    /**
+     * Tema reposunda `components/` var mı? Remote modda dört sayfa aracının
+     * yerel/hibrit mi yoksa proxy mi kaydedileceğini belirler. Senkron: buildServer
+     * senkron ve bu bir kez çalışır (stat ucuz).
+     */
+    hasLocalCatalog(): boolean {
+        try {
+            return fs.statSync(path.join(this.config.projectDir, "components")).isDirectory();
+        } catch {
+            return false;
+        }
     }
 
     /** /me + tema çözümü (önbellekli). Başarısızsa ToolError. */

@@ -10,6 +10,9 @@ mağazanın **sayfalarını okuma ve taslak yazma** yeteneği kazandıran stdio 
 - Kimlik: kişisel erişim anahtarı — `Authorization: Bearer tcf_…`
 - Backend yüzeyi: `https://api.tecof.com/api/v1/*`
 - Sözleşme detayları: [`docs/API_CONTRACT.md`](./API_CONTRACT.md)
+- Üç bağlanma yolu: **stdio local** (bu belgenin ana konusu), **stdio remote** (aynı paket,
+  araçlar backend kataloğundan — §11) ve **uzak HTTP** (`https://api.tecof.com/mcp`, paket
+  kurmadan — §1.5).
 
 ---
 
@@ -49,6 +52,8 @@ NEXT_PUBLIC_THEME_ID=6a85a4d3c30931a35614621b
 | `TECOF_THEME_ID` | hayır | `NEXT_PUBLIC_THEME_ID` | Boşsa mağazanın aktif teması |
 | `TECOF_LOCAL_URL` | hayır | `http://localhost:3000` | `get_preview_url`'ün yerel linki |
 | `TECOF_PROJECT_DIR` | hayır | `CLAUDE_PROJECT_DIR` → `cwd` | Tema reposu başka dizindeyse |
+| `TECOF_MCP_MODE` | hayır | `local` | `remote` → araçlar backend kataloğundan (§11) |
+| `TECOF_TOOLSETS` | hayır | hepsi | remote modda modül daraltma: `pages,cms,media,products,domains,general` |
 
 ### 1.3 İstemciyi bağla
 
@@ -105,6 +110,24 @@ Claude Code'da `/mcp` → `tecof` bağlı görünmeli. İlk komut:
 > "get_site_context çağır, hangi mağaza ve temaya bağlıyız?"
 
 Beklenen: mağaza adı, diller, tema (global `themeId` + panel linki), anahtarın kapsamı ve bitiş tarihi.
+
+### 1.5 Paket kurmadan: uzak HTTP sunucu (`https://api.tecof.com/mcp`)
+
+Backend aynı araçları Streamable HTTP MCP sunucusu olarak da sunar. Tema reposu gerekmez;
+Claude Desktop / claude.ai / Cursor gibi stdio çalıştıramayan istemciler için yol budur.
+Kimlik yine PAT — **static header** olarak (OAuth faz 2'de; "sunucu isterse OAuth" seçenekleri
+yer tutucu sayfaya düşer). Araç adları, şemalar, hata kodları ve sonuç biçimi paketle birebir.
+
+| İstemci | Kurulum |
+|---|---|
+| Claude Code | `claude mcp add --transport http tecof https://api.tecof.com/mcp --header "Authorization: Bearer ${TECOF_API_TOKEN}"` — ya da `.mcp.json`: `{"mcpServers":{"tecof":{"type":"http","url":"https://api.tecof.com/mcp","headers":{"Authorization":"Bearer ${TECOF_API_TOKEN}"},"timeout":600000}}}`. `headers` OLMADAN 401 challenge'ı izlenir ve OAuth yer tutucusuna düşülür. |
+| Codex | `~/.codex/config.toml` → `[mcp_servers.tecof] url = "https://api.tecof.com/mcp"`, `bearer_token_env_var = "TECOF_API_TOKEN"`, `startup_timeout_sec = 20`, `tool_timeout_sec = 300`; onay isteyen araçlar için `[mcp_servers.tecof.tools.delete_page] approval_mode = "prompt"` (delete_cms_item, delete_product, domain_dns_upsert/delete, domain_nameservers_set için tekrarlayın). |
+| Gemini CLI | `{"mcpServers":{"tecof":{"httpUrl":"https://api.tecof.com/mcp","headers":{"Authorization":"Bearer $TECOF_API_TOKEN"},"timeout":600000}}}` |
+| Cursor | `{"mcpServers":{"tecof":{"url":"https://api.tecof.com/mcp","headers":{"Authorization":"Bearer ${env:TECOF_API_TOKEN}"}}}}` |
+| Claude Desktop / claude.ai | Settings → Connectors → *Add custom connector* → URL + Authentication **"None"** + Request header `Authorization: Bearer tcf_…` (beta; "Required when the server asks" SEÇMEYİN) — ya da `npx -y mcp-remote https://api.tecof.com/mcp --header "Authorization: Bearer ${TECOF_API_TOKEN}"` köprüsü. |
+
+Toolset daraltma: `X-Tecof-Toolsets: pages,cms` başlığı ya da `?toolsets=`. Duman testi:
+`curl -s https://api.tecof.com/mcp/health` → `{ ok, toolCount, protocolVersions }`.
 
 ---
 
@@ -295,7 +318,9 @@ Yayına alma bilinçli olarak yok: kullanıcı panelde sayfayı açıp **Yayınl
   Ortak bileşen olmayan (sayfaya gömülü) Header/Footer düzenlenebilir — ama o zaman
   değişiklik **yalnız o sayfaya** işler; diğer sayfalarda eski hâli kalır.
 - **Medya araçları henüz yok**: görsel alanlarına mevcut kütüphane dosyası ya da mutlak URL konur.
-- Kapsamlar bugün `pages:read` ve `pages:write` ile sınırlı.
+- Kapsamlar (PAT scope'ları): `pages:*`, `cms:*`, `media:*`, `ai:generate`, `products:*`, `domains:*`,
+  `analytics:read`, `memory:write` (+ Cloud IDE için `code:*`, `sandbox:run`, `deploy:write`). local
+  mod ilk beşini kullanır; `domains`/`general` araçları yalnız remote modda ve uzak HTTP sunucuda.
 
 ---
 
@@ -307,3 +332,46 @@ Yayına alma bilinçli olarak yok: kullanıcı panelde sayfayı açıp **Yayınl
 - Anahtar veritabanında **hash'li** tutulur; istek günlüklerinde `tcf_…` değerleri maskelenir.
 - Tüm yazmalar denetim günlüğüne (`Ayarlar → Etkinlik`) düşer: kim, hangi anahtarla, hangi sayfa.
 - Anahtarı paylaşılan makinede bırakma; şüphede panelden **iptal et**.
+
+---
+
+## 11. remote mod (stdio proxy)
+
+`TECOF_MCP_MODE=remote` ile aynı paket, araç tanımlarını kendi içinden değil backend'in
+**Tools API** kataloğundan (`GET /api/v1/tools?surface=mcp`) alır ve her çağrıyı
+`POST /api/v1/tools/:name?stream=1` üzerinden sunucuya iletir (`X-Tecof-Surface: mcp` +
+`Authorization: Bearer <TECOF_API_TOKEN>`). Ne zaman tercih edilir: backend'e yeni eklenen bir
+araç (ör. `domain_*`, `store_health_check`) için paketi güncellemek istemiyorsanız, ya da
+/mcp ile birebir aynı davranışı (onay, kredi, hata kodları) stdio üzerinden istiyorsanız.
+
+**Başlangıç.** Katalog isteği 3 sn bütçeyle arka planda koşar; yetişmezse ya da backend
+erişilemezse paketle gelen **snapshot** (38 araç) kullanılır — stderr'de `Katalog: snapshot`
+görürsünüz. `tools/list` çevrimdışı da deterministiktir; canlı katalog sonradan gelirse eksik
+araçlar eklenir ve istemciye `tools/list_changed` gider. `TECOF_TOOLSETS=pages,cms` hem sorguya
+eklenir hem snapshot'ı daraltır.
+
+**Yerel tema kataloğu.** Tema reposunda `components/` varsa `list_components` ve
+`validate_document` bugünkü gibi diskten çalışır; `create_page`/`update_page` **hibrit**tir:
+bölümler/operation'lar yerel katalogla inşa edilip doğrulanır (aynı yazarlık biçimi, aynı hata
+mesajları), hazır `document` sunucunun `create_page`/`update_page` aracına gider ve sunucu kendi
+(yayındaki tema) kataloğuyla bir kez daha doğrular. Sonuç: yerelde olup yayında henüz bulunmayan
+bir bileşen sunucuda `unknown-type` ile reddedilir — böyle bir bileşenle taslak yazmak için
+local mod kullanın. `components/` yoksa (tema reposu dışından çalıştırma) dört araç da sunucudan.
+
+**Sonuç ve hata.** `content[0].text` JSON + `structuredContent` (+ `credit`, `warnings`).
+Hata `isError:true`; metin `"<messageCode>: <mesaj>" + ipucu`, `structuredContent =
+{ error: messageCode, message, status, …data }`. Onay isteyen araçlar `confirm:true` olmadan
+`409 confirmation-required` + `confirmId` döner; kullanıcı onayladıysa AYNI girdiyle
+`confirm:true` ve `confirmId` gönderilir (PAT yüzeyinde onay tek geçişlidir — sunucuda kullanıcı
+yoktur, istemcinin onay adımı onaydır). İlerleme bildirimi yalnız istemci `progressToken`
+verdiyse gelir. Sunucu düz `application/json` dönerse (idempotency replay, kimlik zinciri) zarf
+olduğu gibi okunur.
+
+| Belirti (remote) | Sebep | Çözüm |
+|---|---|---|
+| stderr `Katalog: snapshot` | Backend 3 sn içinde yanıt vermedi / 401 / 403 | Çağrı hatasındaki koda bakın; ağ düzelince arka plan yenilemesi canlıya geçer |
+| `tool-not-found` | Snapshot'taki araç sunucuda yok/kapalı | `TECOF_TOOLSETS`'i kontrol edin; snapshot'ı backend `npm run tools:list -- --json` ile yenileyin |
+| `confirmation-required` | Onay isteyen araç `confirm:true` olmadan çağrıldı | Kullanıcı onayı → aynı girdi + `confirm:true` + `confirmId` |
+| `insufficient-credits` | `generate_image` gibi kredi düşen araç | Panel → Ayarlar → Paket / Krediler |
+| `unknown-type` (sunucu) hibrit create/update_page'de | Bileşen yayındaki temada yok | Temayı yayınlayın ya da local mod |
+
