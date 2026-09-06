@@ -1,6 +1,6 @@
 {
   "name": "@tecof/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Tecof Developer API için stdio MCP sunucusu — tema reposundan sayfa oluşturma/güncelleme araçları",
   "type": "module",
   "license": "MIT",

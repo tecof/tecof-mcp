@@ -345,7 +345,7 @@ araç (ör. `domain_*`, `store_health_check`) için paketi güncellemek istemiyo
 /mcp ile birebir aynı davranışı (onay, kredi, hata kodları) stdio üzerinden istiyorsanız.
 
 **Başlangıç.** Katalog isteği 3 sn bütçeyle arka planda koşar; yetişmezse ya da backend
-erişilemezse paketle gelen **snapshot** (38 araç) kullanılır — stderr'de `Katalog: snapshot`
+erişilemezse paketle gelen **snapshot** (57 araç) kullanılır — stderr'de `Katalog: snapshot`
 görürsünüz. `tools/list` çevrimdışı da deterministiktir; canlı katalog sonradan gelirse eksik
 araçlar eklenir ve istemciye `tools/list_changed` gider. `TECOF_TOOLSETS=pages,cms` hem sorguya
 eklenir hem snapshot'ı daraltır.

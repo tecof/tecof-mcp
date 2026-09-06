@@ -1,8 +1,8 @@
 {
-  "instructions": "Tecof sayfa/CMS/ürün araçları. Sayfa+CMS yazması TASLAK'tır, yayını kullanıcı yapar. Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. CMS: list_cms_collections → get_cms_collection → create_cms_item. Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. Görsel: list_media/import_image/generate_image → uploadValue. Silme/kredi/canlı işlemler onay ister (confirm:true).",
+  "instructions": "Tecof sayfa/CMS/ürün araçları. Sayfa+CMS yazması TASLAK'tır, yayını kullanıcı yapar. Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. CMS: list_cms_collections → get_cms_collection → create_cms_item. Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. Görsel: search_stock_photo/list_media/import_image → uploadValue. Silme/kredi/canlı işlemler onay ister (confirm:true).",
   "version": "1.0.0",
   "surface": "mcp",
-  "generatedAt": "2026-09-05T10:00:57.145Z",
+  "generatedAt": "2026-09-05T20:24:37.735Z",
   "tools": [
     {
       "name": "get_site_context",
@@ -2395,6 +2395,52 @@
         },
         "required": [
           "url"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "media:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "search_stock_photo",
+      "module": "media",
+      "title": "Stok fotoğraf ara",
+      "description": "Verilen İngilizce sorguyla stok fotoğraf sağlayıcısında (Freepik/Pexels/Unsplash — yönetici ayarı) arar, ilk sonucu mağaza medya kütüphanesine indirir ve bir bölümün görsel alanına konabilecek uploadValue döner. Kredi düşmez; AI üretimine düşmez (bunun için generate_image). Sorgu: konu + sektör + mood, 2-6 kelime (örn. 'modern dental clinic interior bright'). Sağlayıcı yoksa stock-photo-not-configured, sonuç yoksa stock-photo-not-found — o zaman list_media'ya geçin.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "İngilizce arama sorgusu (en fazla 120 karakter)"
+          },
+          "orientation": {
+            "description": "Hero/banner: landscape; kart/avatar: square",
+            "type": "string",
+            "enum": [
+              "landscape",
+              "portrait",
+              "square"
+            ]
+          }
+        },
+        "required": [
+          "query"
         ]
       },
       "annotations": {

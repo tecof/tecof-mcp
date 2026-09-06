@@ -10,7 +10,7 @@ içeriklerini ve e-ticaret kataloğunu (ürün) da yönetir — ürün yazması 
 - Node ≥ 20, ESM
 - Tool annotations (`readOnlyHint`, `destructiveHint`) ve `_meta["anthropic/requiresUserInteraction"]` (silme) destekli
 - İki çalışma modu (0.2.0): **`local`** (varsayılan — 26 araç bu pakette, Developer API v1 doğrudan) ve
-  **`remote`** (araç kataloğu backend'in Tools API'sinden; 38+ araç, bkz. [remote mod](#remote-mod-stdio-proxy)).
+  **`remote`** (araç kataloğu backend'in Tools API'sinden; 57 araç — backend kataloğunun tamamı, bkz. [remote mod](#remote-mod-stdio-proxy)).
   stdio hiç istemiyorsanız backend'in kendi **uzak HTTP MCP sunucusu** var: [`https://api.tecof.com/mcp`](#uzak-mcp-http--apitecofcommcp).
 
 ## Kurulum
@@ -206,7 +206,7 @@ kataloğundan alır ve her çağrıyı sunucuya iletir:
 
 | Adım | Ne olur |
 |---|---|
-| Başlangıç | `GET /api/v1/tools?surface=mcp[&toolsets=…]` — **3 sn** bütçe, arka planda. Yetişmezse/erişilemezse paketle gelen **snapshot** (`src/remote/catalog.snapshot.json`, 38 araç) kullanılır ve stderr'e uyarı basılır; `tools/list` çevrimdışı da deterministiktir. Canlı katalog sonradan gelirse eksik araçlar eklenir ve `tools/list_changed` gönderilir. |
+| Başlangıç | `GET /api/v1/tools?surface=mcp[&toolsets=…]` — **3 sn** bütçe, arka planda. Yetişmezse/erişilemezse paketle gelen **snapshot** (`src/remote/catalog.snapshot.json`, 57 araç) kullanılır ve stderr'e uyarı basılır; `tools/list` çevrimdışı da deterministiktir. Canlı katalog sonradan gelirse eksik araçlar eklenir ve `tools/list_changed` gönderilir. |
 | Çağrı | `POST /api/v1/tools/:name?stream=1` — başlıklar `Authorization: Bearer <TECOF_API_TOKEN>`, `X-Tecof-Surface: mcp`. SSE çerçeveleri `progress` / `result` / `error`; sunucu düz `application/json` dönerse (idempotency replay, kimlik zinciri) zarf olduğu gibi okunur. |
 | İlerleme | SSE `progress` çerçeveleri **yalnız** istek `_meta.progressToken` taşıyorsa `notifications/progress` olur. |
 | Sonuç | `content[0].text` = JSON + `structuredContent` (+ `credit`, `warnings`). Hata `isError:true`, metin `"<messageCode>: <mesaj>" + ipucu`, `structuredContent = { error: messageCode, message, status, …data, needsConfirmation? }`. |
