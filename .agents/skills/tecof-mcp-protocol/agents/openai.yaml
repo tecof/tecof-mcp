@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tecof MCP Protokolü"
+  short_description: "MCP sürümü, bağlantı ve yetkilendirme uyumu"
+  default_prompt: "$tecof-mcp-protocol ile bu MCP değişikliğini kurulu SDK, resmî protokol sürümü ve Tecof bağlantı sözleşmesiyle doğrula."

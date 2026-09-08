@@ -367,3 +367,7 @@ const remoteCtx = new ServerContext({ config: { ...loadConfig(), mode: "remote" 
 await remoteCtx.remoteCatalog.ready();
 const proxy = buildServer({ ctx: remoteCtx });
 ```
+
+## Proje geliştirme bilgisi
+
+[Docs indeksi](docs/README.md) ve [MCP protokol haritası](docs/MCP_PROTOCOL.md), güncel kaynak ve test sınırlarını gösterir. Protokol/SDK/bağlantı işleri için [tecof-mcp-protocol skill’i](.agents/skills/tecof-mcp-protocol/SKILL.md) kullanılabilir; Claude aynı kaynağı .claude/skills bağlantısından okur.
