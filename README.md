@@ -10,7 +10,7 @@ içeriklerini ve e-ticaret kataloğunu (ürün) da yönetir — ürün yazması 
 - Node ≥ 20, ESM
 - Tool annotations (`readOnlyHint`, `destructiveHint`) ve `_meta["anthropic/requiresUserInteraction"]` (silme) destekli
 - İki çalışma modu (0.2.0): **`local`** (varsayılan — 26 araç bu pakette, Developer API v1 doğrudan) ve
-  **`remote`** (araç kataloğu backend'in Tools API'sinden; 57 araç — backend kataloğunun tamamı, bkz. [remote mod](#remote-mod-stdio-proxy)).
+  **`remote`** (araç kataloğu backend'in Tools API'sinden canlı gelir; paketteki snapshot yalnız yayın anındaki backend `mcp` kataloğunun kopyasıdır ve canlı katalog önceliklidir, bkz. [remote mod](#remote-mod-stdio-proxy)).
   stdio hiç istemiyorsanız backend'in kendi **uzak HTTP MCP sunucusu** var: [`https://api.tecof.com/mcp`](#uzak-mcp-http--apitecofcommcp).
 
 ## Kurulum
@@ -206,7 +206,7 @@ kataloğundan alır ve her çağrıyı sunucuya iletir:
 
 | Adım | Ne olur |
 |---|---|
-| Başlangıç | `GET /api/v1/tools?surface=mcp[&toolsets=…]` — **3 sn** bütçe, arka planda. Yetişmezse/erişilemezse paketle gelen **snapshot** (`src/remote/catalog.snapshot.json`, 57 araç) kullanılır ve stderr'e uyarı basılır; `tools/list` çevrimdışı da deterministiktir. Canlı katalog sonradan gelirse eksik araçlar eklenir ve `tools/list_changed` gönderilir. |
+| Başlangıç | `GET /api/v1/tools?surface=mcp[&toolsets=…]` — **3 sn** bütçe, arka planda. Yetişmezse/erişilemezse paketle gelen **snapshot** (`src/remote/catalog.snapshot.json` — yayın anındaki backend `mcp` kataloğunun kopyası; canlı katalog önceliklidir) kullanılır ve stderr'e uyarı basılır; `tools/list` çevrimdışı da deterministiktir. Canlı katalog sonradan gelirse eksik araçlar eklenir ve `tools/list_changed` gönderilir. |
 | Çağrı | `POST /api/v1/tools/:name?stream=1` — başlıklar `Authorization: Bearer <TECOF_API_TOKEN>`, `X-Tecof-Surface: mcp`. SSE çerçeveleri `progress` / `result` / `error`; sunucu düz `application/json` dönerse (idempotency replay, kimlik zinciri) zarf olduğu gibi okunur. |
 | İlerleme | SSE `progress` çerçeveleri **yalnız** istek `_meta.progressToken` taşıyorsa `notifications/progress` olur. |
 | Sonuç | `content[0].text` = JSON + `structuredContent` (+ `credit`, `warnings`). Hata `isError:true`, metin `"<messageCode>: <mesaj>" + ipucu`, `structuredContent = { error: messageCode, message, status, …data, needsConfirmation? }`. |
@@ -214,13 +214,30 @@ kataloğundan alır ve her çağrıyı sunucuya iletir:
 | Yerel katalog | Tema reposunda `components/` varsa `list_components` ve `validate_document` diskten çalışır; `create_page`/`update_page` **hibrit**: bölümler/operation'lar yerel katalogla inşa edilip doğrulanır, hazır `document` sunucuya gider (sunucu kendi kataloğuyla bir kez daha doğrular — yayında olmayan bileşen `unknown-type`). `components/` yoksa dört araç da sunucudan. |
 | Yetki | Anahtarın scope'u yetmeyen araçlar da listelenir; hata çağrı anında `insufficient-scope` olarak döner. |
 
-Snapshot'ı yenilemek (backend reposunda): `npm run tools:list -- --json > ../tecof-mcp/src/remote/catalog.snapshot.json`.
+Snapshot'ı yenilemek (backend reposunda): `npm run -s tools:list -- --json > ../tecof-mcp/src/remote/catalog.snapshot.json`
+(`-s` şart: npm'in başlık satırları JSON'u bozar). `test/remote.test.ts` snapshot sözleşmesini denetler —
+kritik tema/kod araçları ve şema alanları eksikse kırmızı, `generatedAt` 14 günden eskiyse uyarı basar.
+
+### remote modda öne çıkan katalog araçları
+
+Aşağıdakiler `local` modda yoktur; tanım ve şema backend kataloğundan gelir (kesin liste ve güncel
+şema için `tools/list` ya da `src/remote/catalog.snapshot.json`):
+
+| Tool | Girdi (özet) | Ne yapar |
+|---|---|---|
+| `publish_page` | `page`, `confirm` | Taslağı yayına alır — onay ister |
+| `list_themes` / `create_theme` / `theme_job_status` / `activate_theme` | `themeId`, `jobId`, `waitFor?` | Özel tema aç (arka plan işi, onay + kredi), iş durumunu bekle, canlıya al (onay) |
+| `theme_commit_files` | `message`, `files?`, `deletions?`, `confirm` | Dosya yazma ve/veya silmeyi tek commit'te depoya gönderir; yalnız silme için `files` verilmeyebilir — onay ister |
+| `theme_deploy_status` | `deploymentId?`, `waitFor?: none\|terminal`, `sinceDeploymentId?`, `timeoutSeconds?` | Dağıtım durumu; `sinceDeploymentId` (commit yanıtındaki `previousDeploymentId`) eski READY'ye kanmadan yeni dağıtımı bekler |
+| `theme_deploy_logs` | `deploymentId`, `errorsOnly?`, `limit?` | ERROR veren dağıtımın derleme günlüğü (değerler maskelenir) |
+| `ide_delete_files` | `sessionId`, `paths` | Sandbox'tan dosya siler; silme `ide_commit_push`'ta depoya gider |
+| `list_discounts` / `list_flash_sales` | `q?`, `isActive?` / `state?`, `page?`, `limit?` | Kuponları / flaş satışları sayfalı listeler |
 
 ## Araçlar
 
 Aşağıdaki 26 araç `local` modun kendi tanımlarıdır. `remote` modda liste backend kataloğundan gelir:
-aynı 26 araç (aynı ad/şema) + `domain_*` (7), `remember`, `search_knowledge`, `analytics_summary`,
-`store_health_check` ve backend'e eklenen her yeni araç — bkz. `src/remote/catalog.snapshot.json`.
+aynı 26 araç (aynı ad/şema) + domain, sipariş, müşteri, pazarlama, ayar, tema/kod ve genel modüllerin
+araçları ve backend'e eklenen her yeni araç — bkz. [remote modda öne çıkan katalog araçları](#remote-modda-öne-çıkan-katalog-araçları).
 
 | Tool | Girdi | Ne yapar |
 |---|---|---|

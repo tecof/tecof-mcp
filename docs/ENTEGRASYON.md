@@ -345,10 +345,29 @@ araç (ör. `domain_*`, `store_health_check`) için paketi güncellemek istemiyo
 /mcp ile birebir aynı davranışı (onay, kredi, hata kodları) stdio üzerinden istiyorsanız.
 
 **Başlangıç.** Katalog isteği 3 sn bütçeyle arka planda koşar; yetişmezse ya da backend
-erişilemezse paketle gelen **snapshot** (57 araç) kullanılır — stderr'de `Katalog: snapshot`
-görürsünüz. `tools/list` çevrimdışı da deterministiktir; canlı katalog sonradan gelirse eksik
+erişilemezse paketle gelen **snapshot** kullanılır — stderr'de `Katalog: snapshot`
+görürsünüz. Snapshot, paketin yayınlandığı andaki backend `mcp` kataloğunun kopyasıdır; canlı
+katalog her zaman önceliklidir (backend'e sonradan eklenen araçlar yalnız canlı katalogda görünür).
+`tools/list` çevrimdışı da deterministiktir; canlı katalog sonradan gelirse eksik
 araçlar eklenir ve istemciye `tools/list_changed` gider. `TECOF_TOOLSETS=pages,cms` hem sorguya
 eklenir hem snapshot'ı daraltır.
+
+**local modda olmayan, öne çıkan katalog araçları.** Tanım ve şema backend'den gelir; kesin
+liste için `tools/list`.
+
+| Araç | Girdi (özet) | Ne yapar |
+|---|---|---|
+| `publish_page` | `page`, `confirm` | Taslağı yayına alır (onay) |
+| `list_themes` / `create_theme` / `theme_job_status` / `activate_theme` | `themeId`, `jobId`, `waitFor?` | Özel tema aç (arka plan işi; onay + kredi), işi bekle, canlıya al (onay) |
+| `theme_commit_files` | `message`, `files?`, `deletions?`, `confirm` | Yazma ve/veya silmeyi tek commit'te gönderir; yalnız silme için `files` gerekmez (ikisi birden boşsa sunucu 400 döner) |
+| `theme_deploy_status` | `deploymentId?`, `waitFor?: none\|terminal`, `sinceDeploymentId?`, `timeoutSeconds?` | Dağıtım durumu; commit yanıtındaki `previousDeploymentId`'yi `sinceDeploymentId` olarak verin ki eski READY sonucu yeni dağıtım sanılmasın |
+| `theme_deploy_logs` | `deploymentId`, `errorsOnly?`, `limit?` | ERROR veren dağıtımın derleme günlüğü; token/başlık/ortam değerleri maskelenir |
+| `ide_delete_files` | `sessionId`, `paths` | Sandbox'tan dosya siler; silme `ide_commit_push` ile depoya gider |
+| `list_discounts` / `list_flash_sales` | `q?`, `isActive?` / `state?`, `page?`, `limit?` | Kuponları / flaş satışları sayfalı listeler |
+
+Stdio proxy girdiyi snapshot/canlı katalogdaki JSON şemasıyla istemcide doğrular: `theme_commit_files`
+yalnız `deletions` ile çağrılabilir; şemaya uymayan girdi (ör. `content`'siz `files` öğesi) sunucuya
+gitmeden reddedilir.
 
 **Yerel tema kataloğu.** Tema reposunda `components/` varsa `list_components` ve
 `validate_document` bugünkü gibi diskten çalışır; `create_page`/`update_page` **hibrit**tir:
@@ -370,7 +389,7 @@ olduğu gibi okunur.
 | Belirti (remote) | Sebep | Çözüm |
 |---|---|---|
 | stderr `Katalog: snapshot` | Backend 3 sn içinde yanıt vermedi / 401 / 403 | Çağrı hatasındaki koda bakın; ağ düzelince arka plan yenilemesi canlıya geçer |
-| `tool-not-found` | Snapshot'taki araç sunucuda yok/kapalı | `TECOF_TOOLSETS`'i kontrol edin; snapshot'ı backend `npm run tools:list -- --json` ile yenileyin |
+| `tool-not-found` | Snapshot'taki araç sunucuda yok/kapalı | `TECOF_TOOLSETS`'i kontrol edin; snapshot'ı backend `npm run -s tools:list -- --json` ile yenileyin |
 | `confirmation-required` | Onay isteyen araç `confirm:true` olmadan çağrıldı | Kullanıcı onayı → aynı girdi + `confirm:true` + `confirmId` |
 | `insufficient-credits` | `generate_image` gibi kredi düşen araç | Panel → Ayarlar → Paket / Krediler |
 | `unknown-type` (sunucu) hibrit create/update_page'de | Bileşen yayındaki temada yok | Temayı yayınlayın ya da local mod |

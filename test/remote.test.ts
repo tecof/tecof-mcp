@@ -299,8 +299,16 @@ describe("remote mod — snapshot fallback ve toolsets", () => {
 
         const offline = await setup({ apiUrl: "http://127.0.0.1:9", toolsets: ["pages"] });
         const names = (await offline.client.listTools()).map((t) => t.name).sort();
-        expect(names).toEqual(["create_page", "delete_page", "get_page", "get_preview_url", "list_components", "list_pages", "update_page", "validate_document"]);
-        expect(loadCatalogSnapshot(["products"]).tools.map((t) => t.module)).toEqual(["products", "products", "products", "products", "products"]);
+        /* Beklenen liste snapshot'tan türetilir (yenilemede sayı değişir); yerel/hibrit
+           dört sayfa aracı toolsets'ten bağımsız her zaman kayıtlıdır */
+        const expectedPages = [...new Set([...SNAPSHOT_TOOLS.filter((t) => t.module === "pages").map((t) => t.name), "list_components", "validate_document", "create_page", "update_page"])].sort();
+        expect(names).toEqual(expectedPages);
+        expect(names).toEqual(expect.arrayContaining(["create_page", "delete_page", "get_page", "get_preview_url", "list_pages", "publish_page"]));
+        expect(names).not.toContain("list_products");
+        const products = loadCatalogSnapshot(["products"]).tools;
+        expect(products.length).toBe(SNAPSHOT_TOOLS.filter((t) => t.module === "products").length);
+        expect(products.length).toBeGreaterThan(0);
+        expect(new Set(products.map((t) => t.module))).toEqual(new Set(["products"]));
     });
 
     it("arka plan yenileme: snapshot ile başlayan sunucuya canlı katalog gelince yeni araç eklenir + tools/list_changed", async () => {
@@ -329,6 +337,114 @@ describe("remote mod — snapshot fallback ve toolsets", () => {
         const r = await client.callTool("list_pages", {});
         expect(r.isError).toBe(true);
         expect(r.text).toContain("TECOF_API_TOKEN");
+    });
+});
+
+/*
+ * Snapshot sözleşmesi: paketteki anlık görüntü backend `tools:list --json`
+ * kopyasıdır ve canlı katalog yetişmediğinde ajan YALNIZ bunu görür. Eskimiş
+ * snapshot backend'de var olan tema/kod araçlarını (theme_deploy_logs,
+ * ide_delete_files…) ve yeni şema alanlarını (waitFor/sinceDeploymentId,
+ * deletions) gizliyordu; yenileme unutulursa bu blok kırmızıya düşer.
+ */
+const CRITICAL_SNAPSHOT_TOOLS = [
+    "create_theme",
+    "theme_job_status",
+    "activate_theme",
+    "list_themes",
+    "publish_page",
+    "theme_deploy_logs",
+    "ide_delete_files",
+    "list_discounts",
+    "theme_deploy_status",
+    "theme_commit_files",
+] as const;
+/* Düşürmez, yalnız uyarır: yaş tek başına yanlışlık değil, yayın öncesi hatırlatma */
+const SNAPSHOT_MAX_AGE_DAYS = 14;
+
+/** Sözleşme ihlalinde `expect` ile düşer — negatif kontrol aynı fonksiyonu bellek içi bozuk kopyayla çağırır. */
+function assertSnapshotContract(tools: CatalogTool[]): void {
+    for (const t of tools) {
+        expect(typeof t.name === "string" && t.name.length > 0, `araç adı eksik: ${JSON.stringify(t).slice(0, 80)}`).toBe(true);
+        expect(typeof t.module === "string" && t.module.length > 0, `${t.name}: module eksik`).toBe(true);
+        expect(!!t.inputSchema && typeof t.inputSchema === "object", `${t.name}: inputSchema eksik`).toBe(true);
+    }
+    const names = tools.map((t) => t.name);
+    expect(names.filter((n, i) => names.indexOf(n) !== i), "snapshot'ta yinelenen araç adı").toEqual([]);
+
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    const missing = CRITICAL_SNAPSHOT_TOOLS.filter((n) => !byName.has(n));
+    expect(missing, `snapshot'ta kritik araç eksik: ${missing.join(", ")}`).toEqual([]);
+
+    const schemaOf = (name: string) => (byName.get(name)?.inputSchema ?? {}) as { properties?: Record<string, unknown>; required?: string[] };
+    expect(Object.keys(schemaOf("theme_deploy_status").properties ?? {}), "theme_deploy_status şeması eski (sinceDeploymentId/waitFor)").toEqual(expect.arrayContaining(["sinceDeploymentId", "waitFor"]));
+    expect(Object.keys(schemaOf("theme_commit_files").properties ?? {}), "theme_commit_files şeması eski (deletions)").toContain("deletions");
+    expect(schemaOf("theme_commit_files").required ?? [], "theme_commit_files: files zorunlu olmamalı (yalnız silme commit'i)").not.toContain("files");
+}
+
+describe("snapshot sözleşmesi — paketteki backend kataloğu", () => {
+    it("her araçta name/module/inputSchema; kritik tema/kod/pazarlama araçları ve yeni şema alanları var", () => {
+        const snapshot = snapshotJson as { surface?: string; instructions?: string; generatedAt?: string };
+        expect(snapshot.surface).toBe("mcp");
+        expect(typeof snapshot.instructions).toBe("string");
+        assertSnapshotContract(SNAPSHOT_TOOLS);
+
+        const generatedAt = Date.parse(snapshot.generatedAt ?? "");
+        const ageDays = Number.isFinite(generatedAt) ? (Date.now() - generatedAt) / 86_400_000 : Number.POSITIVE_INFINITY;
+        if (ageDays > SNAPSHOT_MAX_AGE_DAYS) {
+            console.warn(
+                `UYARI: src/remote/catalog.snapshot.json ${Number.isFinite(ageDays) ? `${Math.floor(ageDays)} gün` : "tarihsiz ve"} eski — backend'de \`npm run tools:list -- --json\` ile yenileyin.`
+            );
+        }
+    });
+
+    it("negatif kontrol: bellek içi kopyadan kritik araç ya da şema alanı düşerse sözleşme kırmızı", () => {
+        const withoutLogs = SNAPSHOT_TOOLS.filter((t) => t.name !== "theme_deploy_logs");
+        expect(() => assertSnapshotContract(withoutLogs)).toThrow(/theme_deploy_logs/);
+
+        const withoutDiscounts = SNAPSHOT_TOOLS.filter((t) => t.name !== "list_discounts");
+        expect(() => assertSnapshotContract(withoutDiscounts)).toThrow(/list_discounts/);
+
+        const staleStatus = SNAPSHOT_TOOLS.map((t) =>
+            t.name === "theme_deploy_status" ? { ...t, inputSchema: { ...t.inputSchema, properties: { themeId: { type: "string" }, deploymentId: { type: "string" } } } } : t
+        );
+        expect(() => assertSnapshotContract(staleStatus)).toThrow(/theme_deploy_status/);
+
+        const filesRequired = SNAPSHOT_TOOLS.map((t) => (t.name === "theme_commit_files" ? { ...t, inputSchema: { ...t.inputSchema, required: ["files", "message"] } } : t));
+        expect(() => assertSnapshotContract(filesRequired)).toThrow(/files zorunlu/);
+    });
+
+    it("stdio proxy: theme_commit_files yalnız deletions ile istemcide reddedilmez; şema doğrulaması yine de çalışır", async () => {
+        const commitPath = "/api/v1/tools/theme_commit_files";
+        const { client, reg } = await setup({
+            registry: {
+                tools: [...CATALOG_TOOLS, fromSnapshot("theme_commit_files"), fromSnapshot("theme_deploy_status")],
+                handlers: {
+                    ...HANDLERS,
+                    theme_commit_files: (input) => ({ data: { committed: true, deleted: input.deletions ?? [] } }),
+                    theme_deploy_status: (input) => ({ data: { state: "READY", waitFor: input.waitFor ?? null, sinceDeploymentId: input.sinceDeploymentId ?? null } }),
+                },
+            },
+        });
+        const byName = Object.fromEntries((await client.listTools()).map((t) => [t.name, t]));
+        expect(byName.theme_commit_files.inputSchema.required ?? []).not.toContain("files");
+        expect(byName.theme_commit_files.inputSchema.properties.deletions).toBeDefined();
+
+        const del = await client.callTool("theme_commit_files", { message: "eski dosyaları sil", deletions: ["src/old.tsx"], confirm: true, confirmId: "cf-del" });
+        expect(del.isError).toBe(false);
+        expect(del.data).toEqual({ committed: true, deleted: ["src/old.tsx"] });
+        const call = reg.calls.find((c) => c.method === "POST" && c.path === commitPath);
+        expect(call!.body.deletions).toEqual(["src/old.tsx"]);
+        expect(call!.body.files ?? []).toEqual([]);
+
+        const st = await client.callTool("theme_deploy_status", { waitFor: "terminal", sinceDeploymentId: "dep-prev" });
+        expect(st.isError).toBe(false);
+        expect(st.data).toEqual({ state: "READY", waitFor: "terminal", sinceDeploymentId: "dep-prev" });
+
+        /* Doğrulama istemcide gerçekten koşuyor: content'siz files öğesi sunucuya gitmez */
+        const bad = await client.callTool("theme_commit_files", { message: "x", files: [{ path: "src/a.tsx" }] });
+        expect(bad.isError).toBe(true);
+        expect(reg.calls.filter((c) => c.method === "POST" && c.path === commitPath)).toHaveLength(1);
     });
 });
 
