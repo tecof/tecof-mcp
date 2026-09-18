@@ -2,7 +2,7 @@
   "instructions": "Tecof sayfa/CMS/ürün araçları. Yayın: publish_page / publish_cms_item (onaylı). Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. CMS: list_cms_collections → get_cms_collection → create_cms_item. Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. Görsel: search_stock_photo/list_media/import_image → uploadValue. Silme/kredi/canlı işlemler onay ister (confirm:true).",
   "version": "1.0.0",
   "surface": "mcp",
-  "generatedAt": "2026-09-14T09:06:18.081Z",
+  "generatedAt": "2026-09-18T07:35:59.947Z",
   "tools": [
     {
       "name": "get_site_context",
@@ -69,7 +69,7 @@
       "name": "get_page",
       "module": "pages",
       "title": "Sayfayı getir",
-      "description": "Bir sayfanın taslağını döner. mode=outline (varsayılan): bölümler ve slot çocukları id/type/kısa metinle — update_page için id'leri buradan alın. mode=full: tam draftData JSON. `page` verilmezse editörde açık sayfa.",
+      "description": "Bir sayfanın taslağını döner. mode=outline (varsayılan): bölümler ve slot çocukları id/type/kısa metinle — update_page için id'leri buradan alın. mode=full: tam draftData JSON, TEK kanonik şekil: slot çocukları yalnız `zones[\"<id>:<slot>\"]` altındadır, `props.<slot>` boş dizidir — props'taki kopyayı düzenlemek işe yaramaz, kayıt onu atar. `page` verilmezse editörde açık sayfa.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -117,7 +117,7 @@
       "name": "create_page",
       "module": "pages",
       "title": "Sayfa oluştur (taslak)",
-      "description": "Yazarlık biçimindeki bölümlerden yeni bir TASLAK sayfa oluşturur. Header/Footer, layoutFrom sayfasındaki ORTAK bileşenlerden (symbol) bağlanır (varsayılan: home) — bunları sections içinde vermeyin. Önce list_components (full) ile alanları doğrulayın; dryRun:true ile kaydetmeden deneyin. `sections` yerine hazır `document` (tam doküman) da verilebilir; ikisi birlikte verilemez.",
+      "description": "Yazarlık biçimindeki bölümlerden yeni bir TASLAK sayfa oluşturur. Bölümün METNİ props'ta değil slot çocuklarındadır (slots:{\"copySlot\":[{type:\"Title\",props:{text:{tr:\"…\"}}}]}); verilmeyen slot temanın DEMO içeriğiyle dolar. Header/Footer, layoutFrom sayfasındaki ORTAK bileşenlerden (symbol) bağlanır (varsayılan: home) — bunları sections içinde vermeyin. Önce list_page_blueprints (hazır kurgu) + list_components (full) ile yapıyı ve alanları doğrulayın; dryRun:true ile kaydetmeden deneyin. `sections` yerine hazır `document` (tam doküman) da verilebilir; ikisi birlikte verilemez. Yanıtta prose `warnings` ile birlikte `issues[{code,path,message,severity}]`. Rehber: tecof://guide/pages.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -348,8 +348,12 @@
                 "minLength": 1,
                 "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
               },
+              "id": {
+                "description": "Mevcut düğümün id'si (get_page outline). Yeni bölümde gerekmez; id üretmeyin.",
+                "type": "string"
+              },
               "props": {
-                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "description": "Alan değerleri. Çok dilli alanlarda {tr:\"…\",en:\"…\"} (tek string yalnız varsayılan dili doldurur); link için {tr:\"/yol\",en:\"/path\"}; select/radio için options'tan bir value.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -361,7 +365,7 @@
                 "type": "string"
               },
               "slots": {
-                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "description": "Slot adı → çocuk bölümler (metin/görsel bunların içindedir). Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -376,7 +380,8 @@
             },
             "required": [
               "type"
-            ]
+            ],
+            "additionalProperties": false
           }
         }
       },
@@ -401,7 +406,7 @@
       "name": "update_page",
       "module": "pages",
       "title": "Sayfayı güncelle (taslak)",
-      "description": "Sayfa taslağını günceller. Dile göre adres/ad için meta.slugs / meta.titles kullanın (kısmi gönderim eski dilleri korur). Ya `operations` (append/insert/replace/remove/move_section, set_props, set_slot, set_root_props — id'ler get_page outline'dan; append_section ve anchor'sız insert_section yeni bölümü Footer'ın ÖNÜNE koyar) ya da `document` (tam doküman) verin; `meta` ile başlık/slug/meta alanları (yalnız meta verilirse draftData'ya dokunulmaz). ORTAK bileşen (sharedComponentId taşıyan, çoğunlukla Header/Footer) örnekleri ve ALT düğümleri buradan değiştirilemez (update_symbol); ortak OLMAYAN Header/Footer sıradan bölümdür, düzenlenebilir. dryRun:true kaydetmez. `page` verilmezse editörde açık sayfa.",
+      "description": "Sayfa taslağını günceller. Dile göre adres/ad için meta.slugs / meta.titles kullanın (kısmi gönderim eski dilleri korur). Ya `operations` (append/insert/replace/remove/move_section, set_props, set_slot, insert_child, remove_child, set_root_props — id'ler get_page outline'dan; append_section ve anchor'sız insert_section yeni bölümü Footer'ın ÖNÜNE koyar) ya da `document` (tam doküman) verin; `meta` ile başlık/slug/meta alanları (yalnız meta verilirse draftData'ya dokunulmaz). ORTAK bileşen (sharedComponentId taşıyan, çoğunlukla Header/Footer) örnekleri ve ALT düğümleri buradan değiştirilemez (update_symbol); ortak OLMAYAN Header/Footer sıradan bölümdür, düzenlenebilir. Metin bölümün props'unda değil slot çocuklarındadır (set_slot). dryRun:true kaydetmez; yanıtta `issues[{code,path,message,severity}]` de döner. `page` verilmezse editörde açık sayfa. Rehber: tecof://guide/pages.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -427,6 +432,7 @@
                       "const": "append_section"
                     },
                     "section": {
+                      "description": "Sayfanın sonuna eklenecek bölüm (Footer varsa onun önüne)",
                       "$ref": "#/$defs/__schema0"
                     }
                   },
@@ -467,9 +473,11 @@
                       "const": "replace_section"
                     },
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Düğüm id'si (get_page outline)"
                     },
                     "section": {
+                      "description": "Bölümün yerine geçecek YENİ tanım; alt ağaç baştan kurulur. Tip aynıysa stil/varyant korunur.",
                       "$ref": "#/$defs/__schema0"
                     }
                   },
@@ -487,7 +495,8 @@
                       "const": "remove_section"
                     },
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Düğüm id'si (get_page outline)"
                     }
                   },
                   "required": [
@@ -503,7 +512,8 @@
                       "const": "move_section"
                     },
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Taşınacak KÖK bölüm id'si"
                     },
                     "before": {
                       "type": "string"
@@ -525,7 +535,8 @@
                       "const": "set_props"
                     },
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Düğüm id'si — metin çoğunlukla slot çocuğundadır (Title/Paragraph), bölümün kendisinde değil"
                     },
                     "props": {
                       "type": "object",
@@ -533,7 +544,11 @@
                         "type": "string"
                       },
                       "additionalProperties": {},
-                      "description": "Sığ birleştirme; dil/link kısayolları geçerli. Slot içeriği için set_slot kullanın."
+                      "description": "Sığ birleştirme; dil/link kısayolları geçerli. Çok dilli alanda YALNIZ verilen diller güncellenir, diğerleri korunur. Slot içeriği için set_slot/insert_child."
+                    },
+                    "replace": {
+                      "description": "true: çok dilli değeri birleştirmeden tamamen değiştirir (verilmeyen diller silinir)",
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -550,17 +565,19 @@
                       "const": "set_slot"
                     },
                     "id": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Slotun sahibi düğüm id'si"
                     },
                     "slot": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "Slot adı (list_components)"
                     },
                     "children": {
                       "type": "array",
                       "items": {
                         "$ref": "#/$defs/__schema0"
                       },
-                      "description": "Slotun YENİ içeriği (tamamen değiştirir)"
+                      "description": "Slotun YENİ içeriği — listede olmayan çocuk SİLİNİR. Korumak istediğiniz mevcut çocuğu {id:\"…\"} olarak yazın; tek çocuk eklemek için insert_child."
                     }
                   },
                   "required": [
@@ -575,6 +592,64 @@
                   "properties": {
                     "op": {
                       "type": "string",
+                      "const": "insert_child"
+                    },
+                    "parentId": {
+                      "type": "string",
+                      "description": "Slotun sahibi düğüm id'si"
+                    },
+                    "slot": {
+                      "type": "string",
+                      "description": "Slot adı (list_components)"
+                    },
+                    "section": {
+                      "description": "Eklenecek TEK çocuk; kardeşlere dokunulmaz",
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "index": {
+                      "description": "Slot içindeki konum (varsayılan: sona)",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "before": {
+                      "description": "Aynı slot'taki bu çocuğun önüne",
+                      "type": "string"
+                    },
+                    "after": {
+                      "description": "Aynı slot'taki bu çocuğun arkasına",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "parentId",
+                    "slot",
+                    "section"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
+                      "const": "remove_child"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "Slot içindeki çocuk id'si — alt ağacıyla silinir"
+                    }
+                  },
+                  "required": [
+                    "op",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "op": {
+                      "type": "string",
                       "const": "set_root_props"
                     },
                     "props": {
@@ -582,7 +657,8 @@
                       "propertyNames": {
                         "type": "string"
                       },
-                      "additionalProperties": {}
+                      "additionalProperties": {},
+                      "description": "Sayfa kökü ayarları (tema/şema anahtarları rezerve)"
                     }
                   },
                   "required": [
@@ -629,7 +705,7 @@
             "required": [
               "content"
             ],
-            "description": "Tam editör dokümanı {root, content, zones}"
+            "description": "Tam editör dokümanı {root, content, zones}. Metin content düğümlerinde DEĞİL, zones[\"<ebeveynId>:<slotAdı>\"] altındaki çocuk düğümlerdedir."
           },
           "meta": {
             "type": "object",
@@ -799,8 +875,12 @@
                 "minLength": 1,
                 "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
               },
+              "id": {
+                "description": "Mevcut düğümün id'si (get_page outline). Yeni bölümde gerekmez; id üretmeyin.",
+                "type": "string"
+              },
               "props": {
-                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "description": "Alan değerleri. Çok dilli alanlarda {tr:\"…\",en:\"…\"} (tek string yalnız varsayılan dili doldurur); link için {tr:\"/yol\",en:\"/path\"}; select/radio için options'tan bir value.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -812,7 +892,7 @@
                 "type": "string"
               },
               "slots": {
-                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "description": "Slot adı → çocuk bölümler (metin/görsel bunların içindedir). Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -827,7 +907,8 @@
             },
             "required": [
               "type"
-            ]
+            ],
+            "additionalProperties": false
           }
         }
       },
@@ -954,7 +1035,7 @@
       "name": "validate_document",
       "module": "pages",
       "title": "Dokümanı doğrula",
-      "description": "Kaydetmeden doğrular. Ya `sections` (yazarlık biçimi: type/props/variant/slots) ya da `document` (tam {root,content,zones}) verin. Hatalar yol + açıklama ile döner; ok=true ise normalizedDocument kaydedilebilir haldedir.",
+      "description": "Kaydetmeden doğrular. Ya `sections` (yazarlık biçimi: type/props/variant/slots) ya da `document` (tam {root,content,zones}) verin. Hatalar yol + açıklama ile döner; ayrıca `issues[{code,path,message,severity}]` (makine-okunur). ok=true ise normalizedDocument kaydedilebilir haldedir.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1001,7 +1082,7 @@
             "required": [
               "content"
             ],
-            "description": "Tam editör dokümanı {root, content, zones}"
+            "description": "Tam editör dokümanı {root, content, zones}. Metin content düğümlerinde DEĞİL, zones[\"<ebeveynId>:<slotAdı>\"] altındaki çocuk düğümlerdedir."
           },
           "themeId": {
             "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
@@ -1017,8 +1098,12 @@
                 "minLength": 1,
                 "description": "Katalogdaki bileşen adı (list_components). Örn. FeaturesSection, Title"
               },
+              "id": {
+                "description": "Mevcut düğümün id'si (get_page outline). Yeni bölümde gerekmez; id üretmeyin.",
+                "type": "string"
+              },
               "props": {
-                "description": "Alan değerleri. Çok dilli alanlarda \"metin\" ya da {tr:\"…\",en:\"…\"} kısayolu; link için \"/yol\"; select/radio için options'tan bir value.",
+                "description": "Alan değerleri. Çok dilli alanlarda {tr:\"…\",en:\"…\"} (tek string yalnız varsayılan dili doldurur); link için {tr:\"/yol\",en:\"/path\"}; select/radio için options'tan bir value.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -1030,7 +1115,7 @@
                 "type": "string"
               },
               "slots": {
-                "description": "Slot adı → çocuk bölümler. Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
+                "description": "Slot adı → çocuk bölümler (metin/görsel bunların içindedir). Verilmeyen slot bileşenin varsayılan çocuklarıyla dolar; boş bırakmak için [] verin.",
                 "type": "object",
                 "propertyNames": {
                   "type": "string"
@@ -1045,7 +1130,8 @@
             },
             "required": [
               "type"
-            ]
+            ],
+            "additionalProperties": false
           }
         }
       },
@@ -1114,7 +1200,7 @@
       "name": "list_components",
       "module": "pages",
       "title": "Tema bileşenlerini listele",
-      "description": "Temanın section ve element bileşenlerini (canlı tema domain'i ya da git deposundan) okur. summary: ad, label, kategori, slot adları. full: alanlar (tip, seçenekler, slot allow listesi), defaultProps (slot değerleri kısaltılmış), variants. TEK bileşen sorgusunda (component verilince) ayrıca defaultChildren: slotların GERÇEK varsayılan çocukları (ton/metin/id dahil) — bir slotu boş bırakırsanız sayfaya bunlar gelir; tema tasarımcısının örnek içeriğini ve ton değerlerini buradan kopyalayın, uydurmayın. Bölüm yazmadan önce full ile alan adlarını doğrulayın.",
+      "description": "Temanın section ve element bileşenlerini (canlı tema domain'i ya da git deposundan) okur. summary: ad, label, kategori, slot adları + alan adı/tipi. full: alanlar (tip, seçenekler, valueFormat = kabul edilen değer + örnek, slot allow/maxItems/orientation), defaultProps (slot değerleri kısaltılmış), variants. `component` (tek ad) ya da `components:[…]` verilirse ayrıca defaultChildren: slotların GERÇEK varsayılan çocukları — bir slotu boş bırakırsanız sayfaya bunlar gelir; tema tasarımcısının örnek içeriğini buradan kopyalayın, uydurmayın. Her yanıtta `architecture` notu: metin section'da değil slot çocuklarındadır. Rehber: tecof://guide/pages.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1131,8 +1217,16 @@
             "description": "Tek bileşen adı (büyük/küçük harf duyarsız)",
             "type": "string"
           },
+          "components": {
+            "description": "Birden çok bileşen adı (en fazla 12) — her biri için full detay + defaultChildren; bileşen başına tek çağrı yapmaya gerek kalmaz",
+            "maxItems": 12,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "detail": {
-            "description": "Varsayılan: summary (component verilmişse full)",
+            "description": "Varsayılan: summary (component/components verilmişse full)",
             "type": "string",
             "enum": [
               "summary",
@@ -1150,6 +1244,46 @@
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "list_page_blueprints",
+      "module": "pages",
+      "title": "Hazır sayfa kurguları",
+      "description": "Temanın KENDİ hazır sayfa kurgularını yazarlık biçiminde (type + props + slots) döner — yapıyı kopyalayın, metinleri değiştirin; bileşen/slot adı uydurmayın. Kaynak: temanın kurulum manifesti; `page` verilirse mağazanın o sayfası kurguya çevrilir. Header/Footer gibi ORTAK bileşenler listeye girmez (create_page layoutFrom ile bağlar). Temanın hazır kurgusu yoksa boş liste + nedeni döner. Rehber: tecof://guide/pages.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "page": {
+            "description": "Var olan sayfanın id'si ya da slug'ı — o sayfanın yapısı kurgu olarak döner",
+            "type": "string"
+          },
+          "blueprint": {
+            "description": "Tek kurgu: manifest rolü ya da slug (örn. 'about', 'hakkimizda')",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
       },
       "requires": {
         "scopes": [
@@ -4206,7 +4340,7 @@
                     "type": "object",
                     "properties": {
                       "sku": {
-                        "description": "Stok kodu — güncellemenin anahtarı. VAR OLAN ürünü güncellerken get_product'taki SKU'yu birebir kopyalayın; eşleşmeyen SKU yeni varyant EKLER (varyant silme panel işidir). Yeni üründe boş bırakılabilir: backend adres + varyant değerlerinden türetir.",
+                        "description": "Stok kodu — güncellemenin anahtarı. VAR OLAN ürünü güncellerken get_product'taki SKU'yu birebir kopyalayın; eşleşmeyen SKU yeni varyant EKLER (bu araç varyant SİLMEZ; silmek/gizlemek için delete_variants). Yeni üründe boş bırakılabilir: backend adres + varyant değerlerinden türetir.",
                         "type": "string",
                         "minLength": 1
                       },
@@ -4588,6 +4722,564 @@
       "credit": null,
       "timeoutMs": 300000,
       "meta": {}
+    },
+    {
+      "name": "estimate_product_shipping",
+      "module": "products",
+      "title": "Kargo ölçüsü tahmin et (AI)",
+      "description": "Ürünlerin kargo ağırlığını (GRAM) ve paket ölçülerini (boy/en/yükseklik, CM) ürün adı + kategori/marka/özelliklerinden AI ile tahmin eder. İKİ ADIM: ÖNCE apply:false (VARSAYILAN) ile öneriyi kullanıcıya göster — ürüne YAZILMAZ, kredi düşmez, onay istenmez; kullanıcı onaylayınca aynı çağrıyı apply:true ile yap (kredi harcar, onay kartını sunucu basar). Ölçüler ürünün kendisinin değil PAKETLENMİŞ KOLİNİN dış ölçüsüdür. Kargo ücreti bu değerlerden hesaplanır (desi = (en×boy×yükseklik)/3000, ücret max(kg, desi) üzerinden) — yanlış ölçü müşteriye yanlış kargo ücreti keser. overwrite:false (varsayılan) DOLU alanı ezmez, yalnız boş alanları doldurur; minConfidence (varsayılan medium) altındaki satırlar uygulanmaz, yalnız öneride görünür. Ürün verilmezse ölçüsü eksik ürünler taranır. Varyant ölçüsü yazmaz (upsert_products).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "products": {
+            "description": "Tahmin edilecek ürünler (en fazla 25). Boş bırakılırsa ölçüsü eksik ürünler taranır.",
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+            }
+          },
+          "missingOnly": {
+            "description": "products verilmediğinde: true (varsayılan) yalnız ağırlığı ya da ölçüsü EKSİK ürünleri tarar; false tüm ürünleri tarar.",
+            "type": "boolean"
+          },
+          "categoryId": {
+            "description": "Taramayı tek kategoriyle sınırla (24-hex kategori id'si)",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Taramada en fazla kaç ürün (varsayılan 10, tavan 25)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25
+          },
+          "apply": {
+            "description": "true → tahmin ürüne YAZILIR (kredi harcar, onay ister). Varsayılan false: yalnız öneri döner.",
+            "type": "boolean"
+          },
+          "overwrite": {
+            "description": "true → mevcut ağırlık/ölçülerin ÜZERİNE yazılır. Varsayılan false: yalnız boş alanlar doldurulur.",
+            "type": "boolean"
+          },
+          "minConfidence": {
+            "description": "Uygulama eşiği (varsayılan \"medium\"): eşiğin altındaki satırlar yazılmaz, önerilerde görünür.",
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write",
+          "ai:generate"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": {
+        "operation": "product-dimensions",
+        "cost": 1,
+        "managedByHandler": false
+      },
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "add_variants",
+      "module": "products",
+      "title": "Varyant ekle (toplu)",
+      "description": "VAR OLAN bir ürüne yeni VARYANT KOMBİNASYONLARI ekler. İKİ MOD: expand = mevcut bir eksene değer ekler ve tüm kombinasyonlara yayar (\"her renge XL ekle\"); combinations = tek tek kombinasyon listesi, ürünün KULLANDIĞI her eksenden bir değer zorunlu. ÖNCE list_variant_types çağır: eksen değeri mağazada TANIMLI olmalı, yoksa create_variant_type ile ekle (uydurulmaz). dryRun:true yalnız önizleme döner. Var olan kombinasyon EKLENMEZ, \"exists\" olarak atlanır. TUZAKLAR: aynı değer adı iki eksende varsa araç durur; üründe kullanılmayan eksen açılamaz (yarım matris); fiyat verilmezse taban kombinasyondan devralınır; tek varyantlı ürün 2. varyantta \"variable\" olur. Varyant fiyat/stok değişimi bulk_update_variants, kaldırma delete_variants.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+          },
+          "expand": {
+            "description": "Mevcut bir eksene eklenecek DEĞERLER (\"XL\", \"XXL\") — hepsi AYNI eksenden olmalı; her taban kombinasyona yayılır",
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "combinations": {
+            "description": "Tek tek kombinasyonlar — expand ile birlikte verilmez",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "values": {
+                  "minItems": 1,
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Eksen DEĞERLERİ: [\"Kırmızı\",\"XL\"] — tip adı gerekmez, değer mağazada tekil olmalı. Ürünün KULLANDIĞI her eksenden bir değer ZORUNLU (Renk × Beden üründe yalnız \"XL\" vermek reddedilir: vitrinde seçilemeyen kombinasyon doğardı)."
+                },
+                "sku": {
+                  "description": "Stok kodu — verilmezse ürün adı + değerlerden türetilir",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "barcode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "price": {
+                  "description": "Bu kombinasyonun fiyatı — verilmezse üst seviyedeki price, o da yoksa ürünün ilk varyantının fiyatı",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "compareAtPrice": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "isActive": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "values"
+              ]
+            }
+          },
+          "price": {
+            "description": "Tüm yeni kombinasyonların fiyatı (kalem kendi fiyatını verirse o kazanır)",
+            "type": "number",
+            "minimum": 0
+          },
+          "compareAtPrice": {
+            "description": "Üstü çizili liste fiyatı",
+            "type": "number",
+            "minimum": 0
+          },
+          "stock": {
+            "description": "Her yeni kombinasyona yazılacak stok (varsayılan 0)",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "stockLocationId": {
+            "description": "Stoğun yazılacağı depo (24 hex) — verilmezse mağazanın varsayılan deposu",
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24
+          },
+          "skuPrefix": {
+            "description": "SKU ön eki; verilmezse ürün adından türetilir",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20
+          },
+          "dryRun": {
+            "description": "true = hiçbir şey yazılmaz, eklenecek kombinasyonların önizlemesi döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "bulk_update_variants",
+      "module": "products",
+      "title": "Toplu varyant güncelle",
+      "description": "BİRDEN ÇOK VARYANTIN fiyat / stok / SKU / barkod / aktifliğini tek çağrıda yazar (\"tüm S bedenlerine %10 zam\", \"mavi olanları pasifleştir\"). Kapsam: products (ad/adres/SKU listesi) · category · search · all. select ile varyant seçilir: kombinasyon etiketi, eksen değeri (\"S\"), SKU kalıbı (\"TS-*-S\"), fiyat aralığı, aktiflik ya da all:true. En az bir seçici alanı ya da all:true ZORUNLU. dryRun:true önce çalıştır: hangi varyantların önce→sonra nasıl değişeceğini yazmadan gösterir. TUZAKLAR: price yüzdesi GERİ ALINAMAZ (onay metninde sayı yazılıdır); stok varyantın HEDEF deposuna yazılır, diğer depolar korunur; sku yalnız TEK varyant seçiliyken kabul edilir; dokunulmayan varyant ve eksen bilgisi aynen kalır. Ürün seviyesinde toplu iş için bulk_update_products.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "products",
+              "category",
+              "search",
+              "all"
+            ],
+            "description": "products = aşağıdaki liste · category · search · all = tüm katalog"
+          },
+          "products": {
+            "description": "scope=products için ürün listesi (ad/adres/SKU/id)",
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+            }
+          },
+          "scopeValue": {
+            "description": "category için kategori adı, search için arama metni",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "select": {
+            "type": "object",
+            "properties": {
+              "variants": {
+                "description": "Kombinasyon etiketi (\"Kırmızı M\") ya da tam SKU listesi — get_product çıktısındaki değerleri kopyalayın",
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "axisValues": {
+                "description": "Eksen DEĞERİ adları (\"S\", \"Mavi\") — bu değeri taşıyan TÜM kombinasyonlar seçilir (\"tüm S bedenleri\")",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "skuPattern": {
+                "description": "SKU kalıbı; yalnız * joker karakteri (\"TS-*-S\"). Büyük/küçük harf ayrımı yok.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "priceMin": {
+                "description": "Fiyatı bu değerden büyük/eşit olan varyantlar",
+                "type": "number",
+                "minimum": 0
+              },
+              "priceMax": {
+                "description": "Fiyatı bu değerden küçük/eşit olan varyantlar",
+                "type": "number",
+                "minimum": 0
+              },
+              "isActive": {
+                "description": "true = yalnız aktif, false = yalnız pasif kombinasyonlar",
+                "type": "boolean"
+              },
+              "all": {
+                "description": "true = ürünün TÜM varyantları (diğer seçici alanları verilmemişse)",
+                "type": "boolean"
+              }
+            },
+            "description": "Hangi varyantlar — alanlar VE ile birleşir; en az bir alan ya da all:true zorunlu"
+          },
+          "price": {
+            "description": "Yüzde/tutar fiyat işlemi — setPrice ile birlikte verilmez",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "percent",
+                  "fixed"
+                ],
+                "description": "percent = yüzde (value:-10 → %10 indirim) · fixed = tutar ekle/çıkar"
+              },
+              "value": {
+                "type": "number",
+                "description": "Yüzde ya da tutar; NEGATİF değer indirimdir"
+              },
+              "target": {
+                "description": "Varsayılan price",
+                "type": "string",
+                "enum": [
+                  "price",
+                  "compareAtPrice",
+                  "both"
+                ]
+              },
+              "round": {
+                "description": "Varsayılan none (2 ondalık)",
+                "type": "string",
+                "enum": [
+                  "none",
+                  "0.99",
+                  "integer"
+                ]
+              }
+            },
+            "required": [
+              "mode",
+              "value"
+            ]
+          },
+          "setPrice": {
+            "description": "Seçilen varyantların fiyatını bu değere SABİTLER",
+            "type": "number",
+            "minimum": 0
+          },
+          "stock": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "set",
+                  "increase",
+                  "decrease"
+                ]
+              },
+              "value": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "stockLocationId": {
+                "description": "Hedef depo (24 hex) — verilmezse varyantın ilk deposu, o da yoksa mağaza varsayılanı",
+                "type": "string",
+                "minLength": 24,
+                "maxLength": 24
+              },
+              "reason": {
+                "description": "Stok hareketine yazılır",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "mode",
+              "value"
+            ]
+          },
+          "sku": {
+            "description": "Yeni SKU — YALNIZ tek varyant seçildiğinde (ürün içinde tekil olmalı)",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "barcode": {
+            "description": "Barkod; boş string barkodu temizler",
+            "type": "string",
+            "maxLength": 64
+          },
+          "isActive": {
+            "description": "false = kombinasyon vitrinde seçilemez (silme DEĞİLDİR)",
+            "type": "boolean"
+          },
+          "dryRun": {
+            "description": "true = hiçbir şey yazılmaz, önce→sonra önizlemesi döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "select"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 540000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "delete_variants",
+      "module": "products",
+      "title": "Varyant sil veya gizle",
+      "description": "TEK bir ürünün seçilen VARYANTLARINI siler (mode:\"remove\", varsayılan) ya da gizler (mode:\"hide\" → isActive:false, geri alınabilir). Kullanıcı onayı olmadan ÇAĞIRMAYIN. SİLME GERİ ALINAMAZ: aynı SKU yeniden açılsa bile yeni bir kimlik alır, geçmiş sipariş satırları/fiyat geçmişi/stok hareketleri bir daha bağlanamaz. ÖNCE dryRun:true çalıştır ve listeyi kullanıcıya göster. Araç kendini korur: AÇIK siparişte, açık satın alma siparişinde/transferde ya da ödemesi süren sepette geçen varyant SİLİNMEZ — atlanır ve sipariş numaralarıyla raporlanır (zorlama bayrağı YOK, o durumda mode:\"hide\" kullan). Ürünün TÜM varyantları silinemez (varyantsız ürün vitrinde 0 fiyatla satılabilir görünür) — ürünün tamamı için delete_product. Silme ayrıca görsel bağlarını çözer, kullanılmayan eksenleri budar, stok zayiatı hareketi yazar ve bekleyen ödeme oturumlarını kapatır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+          },
+          "select": {
+            "type": "object",
+            "properties": {
+              "variants": {
+                "description": "Kombinasyon etiketi (\"Kırmızı M\") ya da tam SKU listesi — get_product çıktısındaki değerleri kopyalayın",
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "axisValues": {
+                "description": "Eksen DEĞERİ adları (\"S\", \"Mavi\") — bu değeri taşıyan TÜM kombinasyonlar seçilir (\"tüm S bedenleri\")",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "skuPattern": {
+                "description": "SKU kalıbı; yalnız * joker karakteri (\"TS-*-S\"). Büyük/küçük harf ayrımı yok.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "priceMin": {
+                "description": "Fiyatı bu değerden büyük/eşit olan varyantlar",
+                "type": "number",
+                "minimum": 0
+              },
+              "priceMax": {
+                "description": "Fiyatı bu değerden küçük/eşit olan varyantlar",
+                "type": "number",
+                "minimum": 0
+              },
+              "isActive": {
+                "description": "true = yalnız aktif, false = yalnız pasif kombinasyonlar",
+                "type": "boolean"
+              }
+            },
+            "description": "Hangi varyantlar — en az bir alan ZORUNLU (yıkıcı araçta all:true bilinçli olarak yok)"
+          },
+          "mode": {
+            "description": "remove (varsayılan) = kalıcı siler · hide = isActive:false, stok/görsel/sipariş bağları korunur",
+            "type": "string",
+            "enum": [
+              "remove",
+              "hide"
+            ]
+          },
+          "images": {
+            "description": "Silinen varyanta bağlı görseller: detach (varsayılan) = ürün galerisinde kalır · delete = satır kaldırılır (dosya kütüphanede kalır)",
+            "type": "string",
+            "enum": [
+              "detach",
+              "delete"
+            ]
+          },
+          "reason": {
+            "description": "Stok hareketine ve denetim izine yazılır",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "dryRun": {
+            "description": "true = hiçbir şey silinmez; silinecek/atlanacak kombinasyonlar ve engelleyiciler döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product",
+          "select"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
     },
     {
       "name": "list_categories",
@@ -7566,6 +8258,292 @@
       "meta": {}
     },
     {
+      "name": "list_email_templates",
+      "module": "marketing",
+      "title": "E-posta şablonlarını listele",
+      "description": "Mağazanın e-posta şablonlarını listeler (ad, konu, durum active/draft, preset, blok sayısı, son değişiklik, panel yolu). Şablon adı/id'si gereken her araçtan (get/audit/improve_email_template, send_email_campaign hazırlığı) ÖNCE çağırın. status ile süzün, query ile ada/konuya göre arayın. En fazla 50 kayıt döner. Salt okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "description": "Yalnız bu durumdakiler",
+            "type": "string",
+            "enum": [
+              "active",
+              "draft"
+            ]
+          },
+          "query": {
+            "description": "Ad ya da konu içinde arama (büyük/küçük harf duyarsız)",
+            "type": "string",
+            "maxLength": 120
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "marketing:read"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "get_email_template",
+      "module": "marketing",
+      "title": "E-posta şablonunu getir",
+      "description": "Tek e-posta şablonunun özetini döner: konu, önizleme metni, blok listesi (id/tip/kısa metin), tema renkleri, kullanılan kişiselleştirme alanları ve kalite denetimi (audit: puan + bulgular). template = 24-hex id ya da ad (tam eşleşme → tek kısmi eşleşme; birden fazla eşleşirse 409 ile adaylar döner, kullanıcıya sorun). HTML döndürmez; düzenlemek için improve_email_template. Salt okunur.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Şablon id'si (24 hex) ya da adı"
+          }
+        },
+        "required": [
+          "template"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "marketing:read"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "audit_email_template",
+      "module": "marketing",
+      "title": "E-posta şablonunu denetle",
+      "description": "Kayıtlı bir e-posta şablonunu kural tabanlı denetler — KREDİSİZ, AI yok. Puan 0-100 ve bulgular (error/warning/info): konu uzunluğu/büyük harf/spam kalıpları, önizleme metni, logo/başlık/metin/buton varlığı, birden fazla CTA, görsel alt metni, abonelikten çıkma bağlantısı, buton kontrastı, blok sayısı. Bulguları kullanıcıya kısa maddeler hâlinde aktarın; düzeltmek için improve_email_template (talimat olarak bulguları verin). template = id ya da ad.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Şablon id'si (24 hex) ya da adı"
+          }
+        },
+        "required": [
+          "template"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "marketing:read"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "generate_email_template",
+      "module": "marketing",
+      "title": "E-posta şablonu üret (AI)",
+      "description": "AI ile YENİ bir pazarlama e-posta şablonu üretir ve TASLAK olarak kaydeder (HTML'i sistem basar; Outlook/Gmail uyumlu). Kredi düşer (email-template-generate); AI/derleme hatasında iade. purpose (amaç) + brief (ne anlatılacak) zorunlu; tone, language (mağaza dillerinden), productSlugs (≤4, gerçek ürün kartı), couponCode, heroImageUrl (https — görsel için ÖNCE generate_image ya da search_stock_photo/import_image ile URL alın) isteğe bağlı. Kalite puanı 70'in altındaysa ücretsiz bir düzeltme turu yapılır. Dönüşte audit (puan/bulgular) ve panelPath gelir; panelde editör açılır. Kullanıcı göndermek isterse ayrı adım: panelde kampanya oluşturup send_email_campaign (onaylı).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "welcome",
+              "promo",
+              "coupon",
+              "launch",
+              "abandoned-cart",
+              "order-update",
+              "newsletter",
+              "custom"
+            ],
+            "description": "Amaç: welcome | promo | coupon | launch | abandoned-cart | order-update | newsletter | custom"
+          },
+          "brief": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 1500,
+            "description": "Ne anlatılacak: teklif, hedef kitle, öne çıkanlar, tarih/koşul"
+          },
+          "tone": {
+            "description": "Ton (örn. samimi, kurumsal, enerjik, sade) — tek satır, ≤80; harf/rakam/boşluk ve , . ' - dışındaki karakterler temizlenir",
+            "type": "string",
+            "maxLength": 80
+          },
+          "language": {
+            "description": "Dil kodu (mağaza dillerinden; varsayılan mağazanın varsayılan dili)",
+            "type": "string",
+            "maxLength": 10
+          },
+          "name": {
+            "description": "Şablon adı (yoksa amaç + tarih)",
+            "type": "string",
+            "maxLength": 160
+          },
+          "productSlugs": {
+            "description": "Gerçek ürün kartı için ürün slug'ları (≤4)",
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "couponCode": {
+            "description": "Kupon bloğuna yazılacak gerçek kod",
+            "type": "string",
+            "maxLength": 40
+          },
+          "heroImageUrl": {
+            "description": "Hero görseli (https). Geçersizse düşürülür.",
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "purpose",
+          "brief"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "marketing:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": {
+        "operation": "email-template-generate",
+        "cost": 3,
+        "managedByHandler": true
+      },
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "improve_email_template",
+      "module": "marketing",
+      "title": "E-posta şablonunu iyileştir (AI)",
+      "description": "Mevcut e-posta şablonunu talimata göre AI ile yeniden yazar (metin/tasarım/ikisi). İKİ ADIM: ÖNCE apply:false — öneri döner (proposalId, yeni konu, değişen bloklar, denetim puanı; kredi düşer, 10 dk saklanır), kullanıcıya gösterin; onaylayınca apply:true + proposalId (AI yok, kredi yok). Öneri yoksa (404) ya da şablon bu arada değiştiyse (409 proposal-stale) yeniden üretmeden ÖNCE kullanıcıya sorun (yeni öneri = yeni kredi). apply:true'yu proposalId'siz çağırmak üretip doğrudan kaydeder (tek kredi) — yalnız kullanıcı açıkça isterse. Değişiklik çıkmazsa kredi iade (noChange). scope: copy | design | all. language verilmezse şablonun dili korunur; çeviri: talimat + language. saveAsNew:true kaynağa dokunmaz, YENİ taslak kaydeder (name; yoksa '<ad> (AI)') — 'İngilizce sürüm' gibi istekler için. Aktif şablonda gönderimler yeni sürümü kullanır (warning). template = id ya da ad.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Şablon id'si (24 hex) ya da adı"
+          },
+          "instruction": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 1500,
+            "description": "Ne değişsin: örn. 'konu satırını kısalt', 'daha satış odaklı yaz', 'İngilizceye çevir'"
+          },
+          "scope": {
+            "description": "copy | design | all (varsayılan all)",
+            "type": "string",
+            "enum": [
+              "copy",
+              "design",
+              "all"
+            ]
+          },
+          "language": {
+            "description": "Hedef dil kodu (mağaza dillerinden). Verilmezse şablonun mevcut dili korunur",
+            "type": "string",
+            "maxLength": 10
+          },
+          "apply": {
+            "description": "false (varsayılan) → yalnız öneri; true → kaydet",
+            "type": "boolean"
+          },
+          "proposalId": {
+            "description": "apply:false çağrısının döndürdüğü öneri id'si — apply:true ile birlikte",
+            "type": "string",
+            "maxLength": 64
+          },
+          "saveAsNew": {
+            "description": "true → kaynak şablona dokunma, sonucu YENİ taslak şablon olarak kaydet",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "saveAsNew ile yeni şablonun adı (yoksa '<kaynak adı> (AI)')",
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "template",
+          "instruction"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "marketing:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": {
+        "operation": "email-template-improve",
+        "cost": 2,
+        "managedByHandler": true
+      },
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
       "name": "list_shipping_profiles",
       "module": "settings",
       "title": "Kargo profillerini listele",
@@ -9824,7 +10802,7 @@
           "sourceThemeId": {
             "description": "Kaynak hazır tema (themes._id). Verilmezse bağlamın teması (editörde açık tema, yoksa aktif tema)",
             "type": "string",
-            "pattern": "^[0-9a-f]{24}$"
+            "pattern": "^[0-9a-fA-F]{24}$"
           },
           "name": {
             "description": "Yeni özel temanın adı (varsayılan '<Kaynak tema adı> — <Mağaza> Özel')",

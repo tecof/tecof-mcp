@@ -57,7 +57,7 @@ const UpsertVariantSchema = z.looseObject({
         .min(1)
         .optional()
         .describe(
-            "Stok kodu — güncellemenin anahtarı. VAR OLAN ürünü güncellerken get_product'taki SKU'yu birebir kopyalayın; eşleşmeyen SKU yeni varyant EKLER (varyant silme panel işidir). Yeni üründe boş bırakılabilir: backend adres + varyant değerlerinden türetir."
+            "Stok kodu — güncellemenin anahtarı. VAR OLAN ürünü güncellerken get_product'taki SKU'yu birebir kopyalayın; eşleşmeyen SKU yeni varyant EKLER (bu araç varyant SİLMEZ; silmek/gizlemek remote mod ya da uzak MCP'deki delete_variants aracıyla). Yeni üründe boş bırakılabilir: backend adres + varyant değerlerinden türetir."
         ),
     price: z.number().min(0).optional().describe("Satış fiyatı. YENİ üründe gönderilmezse 0 yazılır; MEVCUT varyantta gönderilmezse fiyata dokunulmaz."),
     compareAtPrice: z.number().min(0).nullable().optional().describe("Üstü çizili liste fiyatı"),

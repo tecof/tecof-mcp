@@ -226,6 +226,9 @@ Aşağıdakiler `local` modda yoktur; tanım ve şema backend kataloğundan geli
 | Tool | Girdi (özet) | Ne yapar |
 |---|---|---|
 | `publish_page` | `page`, `confirm` | Taslağı yayına alır — onay ister |
+| `add_variants` | `product`, `expand` \| `combinations`, `price?`, `stock?`, `dryRun?` | Var olan ürüne kombinasyon ekler ("her renge XL ekle"); var olan kombinasyon atlanır — onay ister |
+| `bulk_update_variants` | `scope`, `select`, `price` \| `setPrice` \| `stock` \| `isActive`…, `dryRun?` | Seçilen varyantların fiyat/stok/aktifliğini tek çağrıda yazar (≤200 ürün) — onay ister |
+| `delete_variants` | `product`, `select`, `mode?: remove\|hide`, `dryRun?` | TEK ürünün varyantlarını KALICI siler (varsayılan) ya da gizler; açık siparişte geçen varyantı silmez — onay ister |
 | `list_themes` / `create_theme` / `theme_job_status` / `activate_theme` | `themeId`, `jobId`, `waitFor?` | Özel tema aç (arka plan işi, onay + kredi), iş durumunu bekle, canlıya al (onay) |
 | `theme_commit_files` | `message`, `files?`, `deletions?`, `confirm` | Dosya yazma ve/veya silmeyi tek commit'te depoya gönderir; yalnız silme için `files` verilmeyebilir — onay ister |
 | `theme_deploy_status` | `deploymentId?`, `waitFor?: none\|terminal`, `sinceDeploymentId?`, `timeoutSeconds?` | Dağıtım durumu; `sinceDeploymentId` (commit yanıtındaki `previousDeploymentId`) eski READY'ye kanmadan yeni dağıtımı bekler |
