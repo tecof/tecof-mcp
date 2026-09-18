@@ -2,7 +2,7 @@
   "instructions": "Tecof sayfa/CMS/ürün araçları. Yayın: publish_page / publish_cms_item (onaylı). Sayfa: get_site_context → list_components → create_page/update_page → get_preview_url. CMS: list_cms_collections → get_cms_collection → create_cms_item. Ürün: get_product → upsert_products (önce dryRun); \"active\" ANINDA CANLI. Ortak bileşenlere dokunma; id üretme; çok dilli alanları tüm dillerde doldur. Görsel: search_stock_photo/list_media/import_image → uploadValue. Silme/kredi/canlı işlemler onay ister (confirm:true).",
   "version": "1.0.0",
   "surface": "mcp",
-  "generatedAt": "2026-09-18T07:35:59.947Z",
+  "generatedAt": "2026-09-18T21:39:39.999Z",
   "tools": [
     {
       "name": "get_site_context",
@@ -1538,6 +1538,294 @@
           },
           "revisionId": {
             "description": "list_page_revisions'tan revisionId. Verilmezse bir adım geri.",
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:write"
+        ],
+        "feature": null
+      },
+      "confirm": "required",
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "search_site_content",
+      "module": "pages",
+      "title": "Sitede içerik ara",
+      "description": "Bir metni, bağlantıyı ya da alan değerini TÜM sayfalarda (taslak ve/veya yayındaki sürüm) ve ortak bileşenlerde (Header/Footer) arar; sayfa → düğüm id → alan → dil düzeyinde eşleşme ve kısa bağlam döner. Düz metin araması (regex yok), varsayılan büyük/küçük harf duyarsız. Değiştirmek için replace_in_site; tek düğümü düzenlemek için dönen nodeId ile update_page set_props.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "Aranacak düz metin (örn. \"app.tecof.com/login\", \"Demo —\")"
+          },
+          "in": {
+            "description": "Hangi sürüm (varsayılan both)",
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "both"
+            ]
+          },
+          "includeSymbols": {
+            "description": "Ortak bileşenlerde de ara (varsayılan true)",
+            "type": "boolean"
+          },
+          "caseSensitive": {
+            "type": "boolean"
+          },
+          "types": {
+            "description": "Yalnız bu bileşen tipleri (örn. [\"Button\",\"ProductMockup\"])",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "props": {
+            "description": "Yalnız bu alan adları (örn. [\"href\",\"caption\"])",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "pages": {
+            "description": "Yalnız bu sayfalar (id ya da slug); verilmezse tümü",
+            "maxItems": 300,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "replace_in_site",
+      "module": "pages",
+      "title": "Sitede toplu değiştir",
+      "description": "search_site_content'in bulduğu düz metni tüm sayfalarda toplu değiştirir. Sayfalarda YALNIZ TASLAK yazılır; yayın için ardından publish_pages. Ortak bileşenler (Header/Footer) yalnız includeSymbols:true ile ve ANINDA CANLI değişir. Önce dryRun:true ile değişecek her alanı (önce/sonra) görün; yazan çağrı kullanıcı onayı ister. Varsayılan büyük/küçük harf DUYARLI. id, sharedComponentId, motor alanları ve dil kodlarına dokunmaz. Eşleşme sayısı 2000'i aşarsa reddeder.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "find": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500
+          },
+          "replace": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "includeSymbols": {
+            "description": "Ortak bileşen master'larını da değiştir (CANLI; varsayılan false)",
+            "type": "boolean"
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "caseSensitive": {
+            "type": "boolean"
+          },
+          "types": {
+            "description": "Yalnız bu bileşen tipleri (örn. [\"Button\",\"ProductMockup\"])",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "props": {
+            "description": "Yalnız bu alan adları (örn. [\"href\",\"caption\"])",
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "pages": {
+            "description": "Yalnız bu sayfalar (id ya da slug); verilmezse tümü",
+            "maxItems": 300,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "find",
+          "replace"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "diff_page",
+      "module": "pages",
+      "title": "Taslak ile yayın farkı",
+      "description": "Sayfanın TASLAĞI ile YAYINDAKİ sürümü arasındaki farkı döner: eklenen/silinen/değişen düğümler (değişen alanların önce/sonra kısa değeri), sırası değişen kaplar, sayfa ayarı değişiklikleri, son değiştiren kullanıcının siz olup olmadığı. publish_page / publish_pages'ten ÖNCE çağırın — taslakta başkasının yayınlanmamış değişikliği olabilir. Ortak bileşen (Header/Footer) içeriği sayfa farkına girmez: o değişiklikler zaten canlıdır.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Sayfa id'si (24 hex) ya da slug'ı (örn. 'home', 'hakkimizda')"
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
+            "type": "string"
+          },
+          "maxItems": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "pages:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
+    },
+    {
+      "name": "publish_pages",
+      "module": "pages",
+      "title": "Sayfaları toplu yayınla",
+      "description": "Birden çok sayfanın taslağını TEK onayla yayına alır (`pages`: id/slug listesi ya da `all:true` = yayınlanmamış değişikliği olan tüm sayfalar). Onay özeti her sayfanın taslak↔yayın farkını ve 'son değiştiren başka kullanıcı' uyarısını gösterir. Önce diff_page ile inceleyin; `expectedModifiedDates` ({pageId: modifiedDate}) verilirse inceleme sonrası değişen sayfa YAYINLANMAZ. Zaten yayındaki sayfalar atlanır. Yayından kaldırma yok (panel).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pages": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "all": {
+            "description": "Yayınlanmamış değişikliği olan TÜM sayfalar (pages ile birlikte verilmez)",
+            "type": "boolean"
+          },
+          "expectedModifiedDates": {
+            "description": "{pageId: diff_page'deki modifiedDate} — sonradan değişen sayfa atlanır",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "themeId": {
+            "description": "Tema id'si (global themes._id). Verilmezse mağazanın aktif teması.",
             "type": "string"
           },
           "confirm": {
@@ -4951,7 +5239,7 @@
       "name": "bulk_update_variants",
       "module": "products",
       "title": "Toplu varyant güncelle",
-      "description": "BİRDEN ÇOK VARYANTIN fiyat / stok / SKU / barkod / aktifliğini tek çağrıda yazar (\"tüm S bedenlerine %10 zam\", \"mavi olanları pasifleştir\"). Kapsam: products (ad/adres/SKU listesi) · category · search · all. select ile varyant seçilir: kombinasyon etiketi, eksen değeri (\"S\"), SKU kalıbı (\"TS-*-S\"), fiyat aralığı, aktiflik ya da all:true. En az bir seçici alanı ya da all:true ZORUNLU. dryRun:true önce çalıştır: hangi varyantların önce→sonra nasıl değişeceğini yazmadan gösterir. TUZAKLAR: price yüzdesi GERİ ALINAMAZ (onay metninde sayı yazılıdır); stok varyantın HEDEF deposuna yazılır, diğer depolar korunur; sku yalnız TEK varyant seçiliyken kabul edilir; dokunulmayan varyant ve eksen bilgisi aynen kalır. Ürün seviyesinde toplu iş için bulk_update_products.",
+      "description": "BİRDEN ÇOK VARYANTA tek çağrıda yazar: fiyat (yüzde/tutar ya da setPrice), liste fiyatı, stok, SKU, barkod, aktiflik, maliyet, ağırlık (gram), kargo ölçüsü (cm) ve varyantın KENDİ GÖRSELLERİ (ürün sayfası ve sepet önce bunları gösterir). Örn. \"tüm S bedenlerine %10 zam\", \"kırmızı varyantlara bu fotoğraf\". Kapsam: products · category · search · all. select: kombinasyon etiketi, eksen değeri (\"S\"), SKU kalıbı (\"TS-*-S\"), fiyat aralığı, aktiflik ya da all:true (en az biri ZORUNLU). ÖNCE dryRun:true (yazmaz, görsel indirmez). TUZAKLAR: yüzde fiyat GERİ ALINAMAZ; stok HEDEF depoya yazılır, diğer depolar korunur; sku yalnız TEK varyantta; liste fiyatı satış fiyatından büyük olmalı; desi için üç ölçü de dolu olmalı. Ürün seviyesi için bulk_update_products.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -5125,6 +5413,108 @@
             "description": "false = kombinasyon vitrinde seçilemez (silme DEĞİLDİR)",
             "type": "boolean"
           },
+          "compareAtPrice": {
+            "description": "Üstü çizili liste fiyatını SABİTLER (satış fiyatından büyük olmalı); null kaldırır",
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost": {
+            "description": "Maliyet (kâr raporları); null temizler",
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "weight": {
+            "description": "Ağırlık GRAM; null → ürünün varsayılan ağırlığı",
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dimensions": {
+            "description": "Kargo ölçüleri cm — yalnız verilen kenar yazılır; desi = en×boy×yükseklik/3000",
+            "type": "object",
+            "properties": {
+              "length": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "height": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "images": {
+            "description": "Varyantın KENDİ galerisi — aynı görsel birden çok varyanta verilebilir (\"tüm kırmızılar\")",
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "replace",
+                  "append",
+                  "clear"
+                ],
+                "description": "replace = yalnız bunlar · append = sona ekle · clear = varyant galerisini boşalt"
+              },
+              "media": {
+                "description": "Kütüphane dosya adı, uploadId ya da https URL (indirilip kütüphaneye eklenir)",
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
           "dryRun": {
             "description": "true = hiçbir şey yazılmaz, önce→sonra önizlemesi döner",
             "type": "boolean"
@@ -5167,7 +5557,7 @@
       "name": "delete_variants",
       "module": "products",
       "title": "Varyant sil veya gizle",
-      "description": "TEK bir ürünün seçilen VARYANTLARINI siler (mode:\"remove\", varsayılan) ya da gizler (mode:\"hide\" → isActive:false, geri alınabilir). Kullanıcı onayı olmadan ÇAĞIRMAYIN. SİLME GERİ ALINAMAZ: aynı SKU yeniden açılsa bile yeni bir kimlik alır, geçmiş sipariş satırları/fiyat geçmişi/stok hareketleri bir daha bağlanamaz. ÖNCE dryRun:true çalıştır ve listeyi kullanıcıya göster. Araç kendini korur: AÇIK siparişte, açık satın alma siparişinde/transferde ya da ödemesi süren sepette geçen varyant SİLİNMEZ — atlanır ve sipariş numaralarıyla raporlanır (zorlama bayrağı YOK, o durumda mode:\"hide\" kullan). Ürünün TÜM varyantları silinemez (varyantsız ürün vitrinde 0 fiyatla satılabilir görünür) — ürünün tamamı için delete_product. Silme ayrıca görsel bağlarını çözer, kullanılmayan eksenleri budar, stok zayiatı hareketi yazar ve bekleyen ödeme oturumlarını kapatır.",
+      "description": "TEK bir ürünün seçilen VARYANTLARINI siler (mode:\"remove\", varsayılan) ya da gizler (mode:\"hide\" → isActive:false, geri alınabilir). Kullanıcı onayı olmadan ÇAĞIRMAYIN. Silinen varyant 30 gün ÇÖP KUTUSUNDA kalır: restore_variants AYNI kimlikle geri yükler (sipariş/fiyat geçmişi bağları geri gelir); süre dolunca kalıcıdır. ÖNCE dryRun:true çalıştır ve listeyi kullanıcıya göster. Araç kendini korur: AÇIK siparişte, açık satın alma siparişinde/transferde ya da ödemesi süren sepette geçen varyant SİLİNMEZ — atlanır ve sipariş numaralarıyla raporlanır (zorlama bayrağı YOK, o durumda mode:\"hide\" kullan). Ürünün TÜM varyantları silinemez (varyantsız ürün vitrinde 0 fiyatla satılabilir görünür) — ürünün tamamı için delete_product. Silme ayrıca görsel bağlarını çözer, kullanılmayan eksenleri budar, stok zayiatı hareketi yazar ve bekleyen ödeme oturumlarını kapatır.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -5222,7 +5612,7 @@
             "description": "Hangi varyantlar — en az bir alan ZORUNLU (yıkıcı araçta all:true bilinçli olarak yok)"
           },
           "mode": {
-            "description": "remove (varsayılan) = kalıcı siler · hide = isActive:false, stok/görsel/sipariş bağları korunur",
+            "description": "remove (varsayılan) = siler, 30 gün çöp kutusunda (restore_variants) · hide = isActive:false, stok/görsel/sipariş bağları korunur",
             "type": "string",
             "enum": [
               "remove",
@@ -5280,6 +5670,134 @@
       "meta": {
         "anthropic/requiresUserInteraction": true
       }
+    },
+    {
+      "name": "restore_variants",
+      "module": "products",
+      "title": "Silinen varyantı geri yükle",
+      "description": "delete_variants ile silinen varyantları ÇÖP KUTUSUNDAN geri yükler (30 gün). AYNI kimlikle döner: geçmiş sipariş satırları, fiyat geçmişi ve stok hareketleri yeniden bağlanır; eski sırasına konur, stoğu silindiği andaki değerle geri gelir, çözülen görsel bağları yeniden kurulur. product = ürün adı/adresi ya da SİLİNEN varyantın SKU'su. variants verilmezse ürünün geri yüklenebilir TÜM varyantları. ÖNCE dryRun:true ile listeyi göster. TUZAKLAR: silindikten sonra aynı SKU ya da aynı kombinasyon yeniden açıldıysa o varyant ATLANIR (iki kez satışa açılmasın); silinen stok bildirimi abonelikleri ve kapatılan ödeme oturumları geri gelmez; gizlenen (hide) varyant çöp kutusuna girmez — onu bulk_update_variants ile isActive:true yap.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Ürün id'si (24 hex), adresi (slug) ya da varyant stok kodu (SKU) — backend üçünü de dener"
+          },
+          "variants": {
+            "description": "Silinmeden önceki SKU ya da kombinasyon etiketi (\"Mavi / S\") — verilmezse ürünün çöp kutusundaki TÜM varyantları",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "dryRun": {
+            "description": "true = hiçbir şey yazılmaz; geri yüklenecek/atlanacak varyantlar döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": "ecommerceEnabled"
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "variant_performance",
+      "module": "products",
+      "title": "Varyant performansı",
+      "description": "Dönem içinde KOMBİNASYON bazında satış: adet, ciro, sipariş sayısı, ciro payı, güncel stok ve stoğun kaç gün yeteceği. product verilirse o ürünün tüm varyantları + EKSEN DAĞILIMI (\"hangi beden satıyor\": her beden/renk değerinin adet payı ve stoğu) + dönemde hiç satmayan kombinasyonlar; verilmezse katalog genelinde en çok satan kombinasyonlar (includeUnsold:true ile stoğu olup hiç satmayanlar). \"Hangi bedeni satıyor\", \"hangi renk hiç satmadı\", \"M bedeni stoğu kaç gün yeter\" sorularının aracı; gizleme/silme kararı öncesi çağır (delete_variants), stok takviyesi için bulk_update_variants. Dönem ve sayım product_performance ile aynı (today/yesterday/7d/30d/90d, varsayılan 30d; iptal/iade paidOnly:false iken sayılır).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "product": {
+            "description": "Tek ürüne odaklan (ad/adres/SKU/id) — verilmezse katalog geneli",
+            "type": "string",
+            "minLength": 1
+          },
+          "period": {
+            "description": "Dönem (varsayılan 30d)",
+            "type": "string",
+            "enum": [
+              "today",
+              "yesterday",
+              "7d",
+              "30d",
+              "90d"
+            ]
+          },
+          "sortBy": {
+            "description": "Sıralama (varsayılan quantity)",
+            "type": "string",
+            "enum": [
+              "quantity",
+              "revenue",
+              "orders"
+            ]
+          },
+          "limit": {
+            "description": "Kaç kombinasyon (katalogda varsayılan 20, üründe tümü ≤100)",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "includeUnsold": {
+            "description": "Dönemde hiç satmayan kombinasyonları da listele (üründe her zaman listelenir)",
+            "type": "boolean"
+          },
+          "paidOnly": {
+            "description": "Yalnız ödemesi tamamlanmış siparişler",
+            "type": "boolean"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:read",
+          "orders:read"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {}
     },
     {
       "name": "list_categories",
@@ -5846,7 +6364,7 @@
       "name": "create_variant_type",
       "module": "catalog",
       "title": "Varyant tipi oluştur",
-      "description": "Yeni VARYANT TİPİ oluşturur (örn. Renk → Kırmızı, Mavi, Siyah). Tip ZATEN VARSA yeni değerleri mevcut tipe EKLER, kopya tip açmaz (addedValues alanı neyin eklendiğini söyler; var olan değerler atlanır). Değerler mağazanın TÜM dillerine aynı metinle yazılır — çok dilli mağazada çeviriyi panelden düzeltin. ÖNCE list_variant_types çağırın: \"Beden\" varken \"Bedenler\" yazmak AYRI bir tip yaratır ve varyant eksenleri bölünür. Tip/değer SİLME aracı yoktur, panelden yapılır.",
+      "description": "Yeni VARYANT TİPİ oluşturur (örn. Renk → Kırmızı, Mavi, Siyah). Tip ZATEN VARSA yeni değerleri mevcut tipe EKLER, kopya tip açmaz (addedValues alanı neyin eklendiğini söyler; var olan değerler atlanır). Değerler mağazanın TÜM dillerine aynı metinle yazılır — çok dilli mağazada çeviriyi panelden düzeltin. ÖNCE list_variant_types çağırın: \"Beden\" varken \"Bedenler\" yazmak AYRI bir tip yaratır ve varyant eksenleri bölünür. Yeniden adlandırma / kullanılmayan değeri silme: update_variant_type; kopya değer ya da tip birleştirme: merge_variant_values.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -5945,6 +6463,195 @@
       "confirm": null,
       "credit": null,
       "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "update_variant_type",
+      "module": "catalog",
+      "title": "Varyant tipini düzenle",
+      "description": "Bir VARYANT TİPİNİ düzenler: tipi ya da değerlerini YENİDEN ADLANDIRIR (\"Lacivert\" → \"Koyu Mavi\"), renk kodu/sıra/gösterim biçimini ayarlar, KULLANILMAYAN değerleri siler. Ürünler değere kimlikle bağlı olduğu için yeniden adlandırma TEK yazmayla bütün katalogdaki etiketi ANINDA değiştirir (sipariş geçmişindeki başlıklar ve SKU'lar değişmez). Yeni değer eklemek için create_variant_type. TUZAKLAR: tip/değer adı TAM yazılmalı (list_variant_types); kullanımdaki değer SİLİNMEZ (409 — önce merge_variant_values ile başka değere taşı ya da delete_variants); yeniden adlandırma aynı tipte iki eş ad üretirse durur (o değerler birleştirilmeli). Çok dilli mağazada varsayılan dil yazılır, gerçek çeviriler korunur. dryRun:true önizler.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Varyant tipinin TAM adı (\"Beden\") ya da id'si — list_variant_types çıktısından"
+          },
+          "rename": {
+            "description": "Tipin yeni adı",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "selectionType": {
+            "description": "Vitrinde gösterim: renk yuvarlağı / düğme / açılır liste / görsel",
+            "type": "string",
+            "enum": [
+              "color",
+              "button",
+              "dropdown",
+              "image"
+            ]
+          },
+          "values": {
+            "description": "Değer düzenlemeleri",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Değerin ŞU ANKİ tam adı ya da id'si"
+                },
+                "rename": {
+                  "description": "Yeni ad",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "colorCode": {
+                  "description": "#RRGGBB ya da #RGB; null/boş renk kodunu kaldırır",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 7
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "order": {
+                  "description": "Seçicideki sıra (küçük önce)",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 999
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          },
+          "removeValues": {
+            "description": "Silinecek değerler — YALNIZ hiçbir üründe kullanılmıyorsa",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "dryRun": {
+            "description": "true = yazmaz, değişiklik listesini döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 300000,
+      "meta": {
+        "anthropic/requiresUserInteraction": true
+      }
+    },
+    {
+      "name": "merge_variant_values",
+      "module": "catalog",
+      "title": "Varyant değerlerini birleştir",
+      "description": "KOPYA varyant değerlerini ya da tiplerini BİRLEŞTİRİR ve bütün ürünlerdeki bağları yeniden yazar. İKİ KİP: (1) values + into: aynı tipteki değerleri tek değerde topla (\"siyah\", \"SİYAH\" → \"Siyah\"); kaynak değerler silinir. (2) intoType: bir tipi başka tipe kat (\"Bedenler\" → \"Beden\"); değerler ADLA eşlenir, hedefte olmayan açılır, kaynak tip silinir. ÖNCE dryRun:true: kaç ürün/varyant etkileneceğini ve çakışmaları gösterir. TUZAKLAR: bir üründe iki varyant birleşince AYNI kombinasyona düşecekse ya da bir varyant iki tipi birden taşıyorsa HİÇBİR ŞEY yazılmaz (409 merge-conflict + liste) — fazlasını delete_variants ile kaldırıp tekrar dene. Tip/değer adı TAM yazılmalı (list_variant_types). Geri alınamaz; sipariş geçmişi etkilenmez.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "values kipinde değerlerin tipi · intoType kipinde KAYBOLACAK (kaynak) tip"
+          },
+          "values": {
+            "description": "values kipi: birleştirilip SİLİNECEK kaynak değerler (tam ad ya da id)",
+            "minItems": 1,
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "into": {
+            "description": "values kipi: KALACAK hedef değer (aynı tipte)",
+            "type": "string",
+            "minLength": 1
+          },
+          "intoType": {
+            "description": "intoType kipi: KALACAK hedef tip (tam ad ya da id)",
+            "type": "string",
+            "minLength": 1
+          },
+          "dryRun": {
+            "description": "true = yazmaz; etkilenen ürün/varyant sayısı, eşleme ve çakışmalar döner",
+            "type": "boolean"
+          },
+          "confirm": {
+            "description": "Onay bayrağı — araç 409 confirmation-required döndüyse true (+ confirmId) ile tekrar çağırın; istenmediyse gerekmez",
+            "type": "boolean",
+            "const": true
+          },
+          "confirmId": {
+            "description": "confirmation-required yanıtındaki confirmId",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "requires": {
+        "scopes": [
+          "products:write"
+        ],
+        "feature": null
+      },
+      "confirm": null,
+      "credit": null,
+      "timeoutMs": 540000,
       "meta": {
         "anthropic/requiresUserInteraction": true
       }

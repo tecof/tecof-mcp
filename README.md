@@ -225,10 +225,18 @@ Aşağıdakiler `local` modda yoktur; tanım ve şema backend kataloğundan geli
 
 | Tool | Girdi (özet) | Ne yapar |
 |---|---|---|
-| `publish_page` | `page`, `confirm` | Taslağı yayına alır — onay ister |
+| `publish_page` | `page`, `confirm` | Taslağı yayına alır — onay özeti taslak↔yayın farkını gösterir |
+| `search_site_content` | `query`, `in?`, `types?`, `props?`, `pages?`, `includeSymbols?` | Metni/bağlantıyı TÜM sayfalarda (taslak + yayın) ve ortak bileşenlerde arar; sayfa → düğüm → alan → dil |
+| `replace_in_site` | `find`, `replace`, süzgeçler, `includeSymbols?`, `dryRun?` | Toplu değiştirir; sayfalarda yalnız TASLAK (ortak bileşen `includeSymbols` ile CANLI) — onay ister |
+| `diff_page` | `page` | Taslak ile yayındaki sürümün farkı; son değiştiren başka kullanıcı mı |
+| `publish_pages` | `pages[]` \| `all`, `expectedModifiedDates?` | Birden çok sayfayı TEK onayla yayınlar; özet her sayfanın farkını gösterir |
 | `add_variants` | `product`, `expand` \| `combinations`, `price?`, `stock?`, `dryRun?` | Var olan ürüne kombinasyon ekler ("her renge XL ekle"); var olan kombinasyon atlanır — onay ister |
 | `bulk_update_variants` | `scope`, `select`, `price` \| `setPrice` \| `stock` \| `isActive`…, `dryRun?` | Seçilen varyantların fiyat/stok/aktifliğini tek çağrıda yazar (≤200 ürün) — onay ister |
-| `delete_variants` | `product`, `select`, `mode?: remove\|hide`, `dryRun?` | TEK ürünün varyantlarını KALICI siler (varsayılan) ya da gizler; açık siparişte geçen varyantı silmez — onay ister |
+| `delete_variants` | `product`, `select`, `mode?: remove\|hide`, `dryRun?` | TEK ürünün varyantlarını siler (varsayılan; 30 gün çöp kutusunda) ya da gizler; açık siparişte geçen varyantı silmez — onay ister |
+| `restore_variants` | `product` (ya da silinen SKU), `variants?`, `dryRun?` | Silinen varyantı 30 gün içinde AYNI kimlikle geri yükler (sipariş/fiyat geçmişi bağları geri gelir) — onay ister |
+| `variant_performance` | `product?`, `period?`, `sortBy?`, `includeUnsold?` | Kombinasyon bazında satış + stok kaç gün yeter; üründe beden/renk dağılımı ve hiç satmayanlar (salt-okunur) |
+| `update_variant_type` | `type`, `rename?`, `values?[{value, rename?, colorCode?, order?}]`, `removeValues?`, `dryRun?` | Varyant tipini/değerlerini yeniden adlandırır (bütün katalogda anında), kullanılmayan değeri siler — onay ister |
+| `merge_variant_values` | `type` + (`values`, `into`) ya da `intoType`, `dryRun?` | Kopya değerleri ("siyah"→"Siyah") ya da tipleri ("Bedenler"→"Beden") birleştirir, ürün bağlarını yeniden yazar; çakışmada hiçbir şey yazmaz — onay ister |
 | `list_themes` / `create_theme` / `theme_job_status` / `activate_theme` | `themeId`, `jobId`, `waitFor?` | Özel tema aç (arka plan işi, onay + kredi), iş durumunu bekle, canlıya al (onay) |
 | `theme_commit_files` | `message`, `files?`, `deletions?`, `confirm` | Dosya yazma ve/veya silmeyi tek commit'te depoya gönderir; yalnız silme için `files` verilmeyebilir — onay ister |
 | `theme_deploy_status` | `deploymentId?`, `waitFor?: none\|terminal`, `sinceDeploymentId?`, `timeoutSeconds?` | Dağıtım durumu; `sinceDeploymentId` (commit yanıtındaki `previousDeploymentId`) eski READY'ye kanmadan yeni dağıtımı bekler |
